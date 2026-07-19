@@ -11,3 +11,5 @@ tags:
 ---
 
 Append-only log of wiki operations.
+
+- 2026-07-19 WRITE: query dlg-97936ebe2e2f
