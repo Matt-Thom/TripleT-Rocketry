@@ -4,8 +4,8 @@ type: index
 title: Wiki Index
 source: forge
 project_id: PROJ-075AA139
-created: '2026-07-20'
-updated: '2026-07-20'
+created: '2026-07-23'
+updated: '2026-07-23'
 tags:
 - index
 ---
@@ -20,6 +20,10 @@ tags:
 ## Schema
 
 - [Schema & Conventions](schema.md)
+
+## Anchor
+
+- [github_init_status](anchors/github_init_status.md)
 
 ## Log
 
