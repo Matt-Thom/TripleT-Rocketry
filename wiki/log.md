@@ -27,3 +27,4 @@ Append-only log of wiki operations.
 - 2026-07-20 WRITE: query dlg-8ebc7b1303f0
 - 2026-07-23 WRITE: anchor ANCH-github_init_status
 - 2026-07-23 WRITE: anchor ANCH-github_init_probe
+- 2026-07-23 WRITE: anchor ANCH-github_init_local_git_state
