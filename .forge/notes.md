@@ -22,3 +22,7 @@ GitHub init (DLG-4297421D5B98) re-check: local .git intact; HEAD apprentice/DLG-
 ## [2026-07-23T09:06Z] gotcha — code_quality (delegation DLG-4297)
 
 Local git probe (read-only): .git exists; branch apprentice/DLG-4297/code_quality @ c36ffec65c0214c1c9a9ad460bb1b9a0d6c2c71a; master @ 3e1e4a0d94b9c4b410c43d81d23d66b73f79ae7c; has_origin=false (.git/config has [core]+[user] only); status=clean (inferred); commit_count_head=16, commit_count_master=15. Anvil still unavailable — no shell/python sandbox. Do not re-init or add origin without operator credentials + network.
+
+## [2026-07-23T09:07Z] gotcha — code_quality (delegation DLG-4297)
+
+GitHub ensure-repo step (T-2): Anvil still unavailable (Docker). No gh/GitHub-write tools in active set. discover_tools shows http_get + fetch_url_as_markdown + create_pull_request only for remote interaction. Cannot run `gh auth status` or `gh repo create`. Will attempt unauthenticated existence probe via http_get; private create remains operator-blocked without FORGE_SECRET_GIT_* + live Anvil+network.

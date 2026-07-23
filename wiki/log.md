@@ -28,3 +28,4 @@ Append-only log of wiki operations.
 - 2026-07-23 WRITE: anchor ANCH-github_init_status
 - 2026-07-23 WRITE: anchor ANCH-github_init_probe
 - 2026-07-23 WRITE: anchor ANCH-github_init_local_git_state
+- 2026-07-23 WRITE: anchor ANCH-github_init_ensure_repo_attempt
