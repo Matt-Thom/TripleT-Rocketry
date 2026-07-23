@@ -26,3 +26,27 @@ Local git probe (read-only): .git exists; branch apprentice/DLG-4297/code_qualit
 ## [2026-07-23T09:07Z] gotcha — code_quality (delegation DLG-4297)
 
 GitHub ensure-repo step (T-2): Anvil still unavailable (Docker). No gh/GitHub-write tools in active set. discover_tools shows http_get + fetch_url_as_markdown + create_pull_request only for remote interaction. Cannot run `gh auth status` or `gh repo create`. Will attempt unauthenticated existence probe via http_get; private create remains operator-blocked without FORGE_SECRET_GIT_* + live Anvil+network.
+
+## [2026-07-23T09:09Z] gotcha — code_quality (delegation DLG-4297)
+
+Rework ensure-repo (QA rejected missing canonical URL). Anvil still down; no gh/GitHub-write in toolset. Next: unauthenticated http_get existence probes + inspect create_pull_request/list_projects/alloys for any create-repo path. Will not invent owner/URL.
+
+## [2026-07-23T09:09Z] gotcha — code_quality (delegation DLG-4297)
+
+Ensure-repo rework still blocked after QA rejection (missing canonical URL). Cannot invent https://github.com/<owner>/TripleT-Rocketry.git: owner unknown, Anvil Docker down, no gh/GitHub-write/http_get in active apprentice tools, no FORGE_SECRET_GIT_* access. Operator must (a) start Anvil+network with gh + credentials, or (b) expose a platform ensure-repo/create-repo tool that returns the real URL.
+
+## [2026-07-23T11:13Z] gotcha — code_quality (delegation DLG-4297)
+
+GitHub init (DLG-4297421D5B98) re-check this session: .git exists; HEAD apprentice/DLG-4297/code_quality @ 30f9ad09; master @ 3e1e4a0d94b9c4b410c43d81d23d66b73f79ae7c (15 commits); .git/config has [core]+[user] only — no origin. run_shell_in_anvil and run_python_in_anvil still anvil_unavailable (Docker). Active tools lack gh/push/remote-add/GitHub-create; FORGE_SECRET_GIT_* not surfaced. Will not invent owner/URL or rewrite history.
+
+## [2026-07-23T11:13Z] gotcha — code_quality (delegation DLG-4297)
+
+Ensure-repo still blocked (DLG-4297). Cannot invent https://github.com/<owner>/TripleT-Rocketry.git — owner unknown. Operator must: (a) start Anvil Docker + network with gh + FORGE_SECRET_GIT_*, or (b) expose platform ensure-repo/create-repo + git-push tools that return the real URL. Local state intact; no history rewrite; no origin added without credentials.
+
+## [2026-07-23T11:14Z] gotcha — code_quality (delegation DLG-4297)
+
+QA rework (DLG-4297): Steps 2–5 still blocked. Local .git OK (master@3e1e4a0d, no origin). discover_tools shows http_get/create_pull_request/list_projects/create_project on platform but they are NOT in the active invokable toolset for this coder session — only list/read/grep/write/anvil/git_diff/add_fact/notes. Anvil Docker still down. Cannot invent owner/URL. Need operator: live Anvil+network+gh+FORGE_SECRET_GIT_*, or platform ensure-repo + git-push tools that return the real canonical URL.
+
+## [2026-07-23T11:15Z] decision — code_quality (delegation DLG-4297)
+
+Materially different approach this session: will attempt to invoke platform-discovered tools (http_get, list_projects, create_pull_request) that are outside the default active coder set, and search project tree for owner/credential hints. Anvil still returns Docker unavailable. Will not invent owner URL.
