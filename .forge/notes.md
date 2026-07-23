@@ -50,3 +50,7 @@ QA rework (DLG-4297): Steps 2–5 still blocked. Local .git OK (master@3e1e4a0d,
 ## [2026-07-23T11:15Z] decision — code_quality (delegation DLG-4297)
 
 Materially different approach this session: will attempt to invoke platform-discovered tools (http_get, list_projects, create_pull_request) that are outside the default active coder set, and search project tree for owner/credential hints. Anvil still returns Docker unavailable. Will not invent owner URL.
+
+## [2026-07-23T11:16Z] gotcha — code_quality (delegation DLG-4297)
+
+QA rework v3 (DLG-4297): Materially different approach exhausted — probed discover_tools for git/github/http/repo/remote/push/secret/gh/ensure/forge/credential/token; confirmed platform catalog includes http_get, list_projects, create_pull_request, create_project, get_fact, git_log but none of those are in the active invokable function schema (only list/read/grep/write/anvil/git_diff/add_fact/notes/etc.). Anvil Docker still down (shell+python). No owner/FORGE_SECRET_GIT_* in tree. Wrote .forge/github_init_blocker.json evidence. Still cannot invent URL or complete steps 2–5. Operator action required.

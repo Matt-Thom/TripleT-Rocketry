@@ -1,0 +1,50 @@
+{
+  "delegation": "DLG-4297421D5B98",
+  "project_id": "PROJ-075AA139",
+  "preferred_repo_name": "TripleT-Rocketry",
+  "status": "blocked",
+  "step1_local_git": {
+    "git_exists": true,
+    "no_reinit": true,
+    "branch_head": "apprentice/DLG-4297/code_quality",
+    "head_sha": "30f9ad09b2325a0b5042654a8f9e3616a89bf4b1",
+    "master_sha": "3e1e4a0d94b9c4b410c43d81d23d66b73f79ae7c",
+    "master_message": "forge: update ANCH-github_init_status",
+    "commit_count_master": 15,
+    "has_origin": false,
+    "remotes": [],
+    "config_sections": ["core", "user"],
+    "inspected_via": "read_file .git/*"
+  },
+  "steps_2_to_5": {
+    "ensure_repo": "not_done",
+    "add_origin": "not_done",
+    "push_master_upstream": "not_done",
+    "verify_remote_v": "not_done",
+    "repo_url": null,
+    "owner": null,
+    "push_result": null
+  },
+  "blockers": [
+    "run_shell_in_anvil -> anvil_unavailable (Docker not available)",
+    "run_python_in_anvil -> anvil_unavailable (Docker not available)",
+    "no invokable gh / git-remote-add / git-push / GitHub-create tools in active coder toolset",
+    "FORGE_SECRET_GIT_* not surfaced to apprentice session",
+    "owner unknown — will not invent https://github.com/<owner>/TripleT-Rocketry.git",
+    "platform discover_tools lists http_get/list_projects/create_pull_request/create_project but they are not in the active invokable function schema for this session"
+  ],
+  "constraints_honored": [
+    "no_force_reinit",
+    "no_history_rewrite",
+    "no_secrets_committed_or_printed",
+    "no_fake_origin",
+    "no_wiki_or_app_code_mutation_for_this_task",
+    "no_invented_owner_url"
+  ],
+  "operator_actions_required": [
+    "Start Anvil Docker with network enabled and gh CLI + FORGE_SECRET_GIT_* credentials injected",
+    "OR expose platform ensure-repo + git-remote-add + git-push tools that return the canonical repo URL",
+    "Then re-dispatch DLG-4297421D5B98 (or equivalent) so coder can complete steps 2-5"
+  ],
+  "session": "coder_rework_qa_v3"
+}
