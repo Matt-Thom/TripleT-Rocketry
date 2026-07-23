@@ -18,3 +18,7 @@ GitHub init still blocked (DLG-4297421D5B98). Inspected via read_file on .git/* 
 ## [2026-07-23T09:05Z] gotcha — code_quality (delegation DLG-4297)
 
 GitHub init (DLG-4297421D5B98) re-check: local .git intact; HEAD apprentice/DLG-4297/code_quality; master tip 3e1e4a0d94b9c4b410c43d81d23d66b73f79ae7c; .git/config has [core]+[user] only — no [remote "origin"]. Toolset still lacks git push/remote/gh/GitHub-write; run_shell_in_anvil and run_python_in_anvil return anvil_unavailable (Docker not available). Only http_get + read-only git_* available. Steps 2–5 remain operator-blocked.
+
+## [2026-07-23T09:06Z] gotcha — code_quality (delegation DLG-4297)
+
+Local git probe (read-only): .git exists; branch apprentice/DLG-4297/code_quality @ c36ffec65c0214c1c9a9ad460bb1b9a0d6c2c71a; master @ 3e1e4a0d94b9c4b410c43d81d23d66b73f79ae7c; has_origin=false (.git/config has [core]+[user] only); status=clean (inferred); commit_count_head=16, commit_count_master=15. Anvil still unavailable — no shell/python sandbox. Do not re-init or add origin without operator credentials + network.
