@@ -31,3 +31,4 @@ Append-only log of wiki operations.
 - 2026-07-23 WRITE: anchor ANCH-github_init_ensure_repo_attempt
 - 2026-07-23 WRITE: anchor ANCH-github_init_session_probe
 - 2026-07-23 WRITE: anchor ANCH-_probe_list_projects
+- 2026-08-17 WRITE: query dlg-4ae8f810f0ec
