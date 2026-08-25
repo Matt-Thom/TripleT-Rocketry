@@ -29,6 +29,7 @@ tags:
 - [github_init_probe](anchors/github_init_probe.md)
 - [github_init_session_probe](anchors/github_init_session_probe.md)
 - [github_init_status](anchors/github_init_status.md)
+- [github_push_status](anchors/github_push_status.md)
 
 ## Log
 

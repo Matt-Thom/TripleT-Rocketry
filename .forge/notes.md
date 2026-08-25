@@ -54,3 +54,7 @@ Materially different approach this session: will attempt to invoke platform-disc
 ## [2026-07-23T11:16Z] gotcha — code_quality (delegation DLG-4297)
 
 QA rework v3 (DLG-4297): Materially different approach exhausted — probed discover_tools for git/github/http/repo/remote/push/secret/gh/ensure/forge/credential/token; confirmed platform catalog includes http_get, list_projects, create_pull_request, create_project, get_fact, git_log but none of those are in the active invokable function schema (only list/read/grep/write/anvil/git_diff/add_fact/notes/etc.). Anvil Docker still down (shell+python). No owner/FORGE_SECRET_GIT_* in tree. Wrote .forge/github_init_blocker.json evidence. Still cannot invent URL or complete steps 2–5. Operator action required.
+
+## [2026-08-25T12:57Z] gotcha — code_quality (delegation DLG-1A16)
+
+GitHub publish (DLG-1A16DB0A5FAE): still BLOCKED. Local .git is a worktree pointer (T-112); cannot read HEAD/config/remotes via read_file. Anvil Docker still down (shell none+bridge and python). discover_tools catalog has http_get/list_projects/create_pull_request/create_project but they are NOT in the active invokable schema. No ALLOY-HTTP-0003 / ALLOY-GIT-*, no FORGE_SECRET_GIT_*, no owner. Did not invent URL or add origin. Evidence: .forge/github_push_result.md (status=blocked, repo_url=null). Operator must start Anvil+network+gh+creds or expose ensure-repo+push tools that return the real canonical URL.
