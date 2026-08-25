@@ -33,3 +33,4 @@ Append-only log of wiki operations.
 - 2026-07-23 WRITE: anchor ANCH-_probe_list_projects
 - 2026-08-17 WRITE: query dlg-4ae8f810f0ec
 - 2026-08-25 WRITE: query dlg-29db072379dc
+- 2026-08-25 WRITE: query dlg-1a16db0a5fae
