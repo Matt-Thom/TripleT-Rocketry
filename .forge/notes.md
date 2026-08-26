@@ -58,3 +58,19 @@ QA rework v3 (DLG-4297): Materially different approach exhausted — probed disc
 ## [2026-08-25T12:57Z] gotcha — code_quality (delegation DLG-1A16)
 
 GitHub publish (DLG-1A16DB0A5FAE): still BLOCKED. Local .git is a worktree pointer (T-112); cannot read HEAD/config/remotes via read_file. Anvil Docker still down (shell none+bridge and python). discover_tools catalog has http_get/list_projects/create_pull_request/create_project but they are NOT in the active invokable schema. No ALLOY-HTTP-0003 / ALLOY-GIT-*, no FORGE_SECRET_GIT_*, no owner. Did not invent URL or add origin. Evidence: .forge/github_push_result.md (status=blocked, repo_url=null). Operator must start Anvil+network+gh+creds or expose ensure-repo+push tools that return the real canonical URL.
+
+## [2026-08-26T01:13Z] gotcha — code_quality (delegation DLG-BCD6)
+
+GitHub create-repo (Matt-Thom/TripleT-Rocketry, public, auto_init=false, default branch master): BLOCKED. Anvil Docker unavailable (shell none+bridge; python none=unavailable, python bridge=unauthorized). discover_tools catalog has http_get/fetch_url_as_markdown/create_pull_request/create_project but they are NOT in the active invokable schema; no HTTP POST / gh / GitHub create tool. FORGE_SECRET_GIT_* / GH_TOKEN not surfaced. Did not invent a token or claim https://github.com/Matt-Thom/TripleT-Rocketry exists. Evidence: .forge/github_create_repo_result.json (repo_url=null). Operator must start Anvil+network+creds or expose invokable POST/ensure-repo.
+
+## [2026-08-26T01:19Z] gotcha — code_quality (delegation DLG-BCD6)
+
+GitHub create-repo (Matt-Thom/TripleT-Rocketry, public, auto_init=false, default branch master): BLOCKED again. Anvil Docker unavailable (shell none+bridge; python none+bridge — both anvil_unavailable). discover_tools catalog has http_get/fetch_url_as_markdown/create_pull_request/create_project/list_projects but they are NOT in the active invokable schema; no HTTP POST / gh / GitHub create tool. FORGE_SECRET_GIT_* / GH_TOKEN not surfaced. Did not invent a token or claim https://github.com/Matt-Thom/TripleT-Rocketry exists. Evidence: .forge/github_create_repo_result.json (repo_url=null). Operator must start Anvil+network+creds or expose invokable POST/ensure-repo.
+
+## [2026-08-26T01:22Z] gotcha — code_quality (delegation DLG-BCD6)
+
+GitHub create-repo (Matt-Thom/TripleT-Rocketry, public, auto_init=false, default branch master): BLOCKED again (reprobe v2). Anvil Docker unavailable (shell none+bridge ANVIL_PROBE_V2; python none PYTHON_ANVIL_PROBE_V2 — no env dump, no git in shell). discover_tools catalog has http_get/fetch_url_as_markdown/create_pull_request/create_project but they are NOT in the active invokable schema; no HTTP POST / gh / GitHub create tool. FORGE_SECRET_GIT_* / GH_TOKEN not surfaced. Did not invent a token or claim https://github.com/Matt-Thom/TripleT-Rocketry exists. Evidence: .forge/github_create_repo_result.json (repo_url=null). Operator must start Anvil+network+creds or expose invokable POST/ensure-repo.
+
+## [2026-08-26T01:25Z] gotcha — code_quality (delegation DLG-BCD6)
+
+GitHub create-repo (Matt-Thom/TripleT-Rocketry, public, auto_init=false, default branch master): BLOCKED again (v3 post-QA). Did not repeat attempt-1 failures (no T-116 config/HEAD/commondir; no ALLOY-CODE/DATA test reads; no ANVIL_PROBE_V2; no git in shell). Anvil Docker unavailable (shell bridge ANVIL_CREATE_REPO_V3; python bridge PYTHON_CREATE_REPO_V3). discover_tools catalog has http_get/fetch_url_as_markdown/create_pull_request/create_project/execute_alloy__ALLOY_* but they are NOT in the active invokable schema; no HTTP POST / gh / GitHub create tool. FORGE_SECRET_GIT_* / GH_TOKEN not surfaced. Did not invent a token or claim https://github.com/Matt-Thom/TripleT-Rocketry exists. Evidence: .forge/github_create_repo_result.json (repo_url=null). Operator must start Anvil+network+creds or expose invokable POST/ensure-repo.
