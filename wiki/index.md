@@ -25,6 +25,7 @@ tags:
 
 - [_probe_list_projects](anchors/_probe_list_projects.md)
 - [github_create_repo_status](anchors/github_create_repo_status.md)
+- [github_create_repo_url](anchors/github_create_repo_url.md)
 - [github_init_ensure_repo_attempt](anchors/github_init_ensure_repo_attempt.md)
 - [github_init_local_git_state](anchors/github_init_local_git_state.md)
 - [github_init_probe](anchors/github_init_probe.md)

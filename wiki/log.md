@@ -40,3 +40,4 @@ Append-only log of wiki operations.
 - 2026-08-26 WRITE: query dlg-056a75803405
 - 2026-08-26 WRITE: query dlg-bf2dd68e4e44
 - 2026-08-26 WRITE: anchor ANCH-github_create_repo_status
+- 2026-08-26 WRITE: anchor ANCH-github_create_repo_url
