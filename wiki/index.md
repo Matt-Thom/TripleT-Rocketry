@@ -4,8 +4,8 @@ type: index
 title: Wiki Index
 source: forge
 project_id: PROJ-075AA139
-created: '2026-08-25'
-updated: '2026-08-25'
+created: '2026-08-26'
+updated: '2026-08-26'
 tags:
 - index
 ---
@@ -30,6 +30,7 @@ tags:
 - [github_init_session_probe](anchors/github_init_session_probe.md)
 - [github_init_status](anchors/github_init_status.md)
 - [github_push_status](anchors/github_push_status.md)
+- [impulse_class_table_a_to_o](anchors/impulse_class_table_a_to_o.md)
 
 ## Log
 

@@ -34,3 +34,4 @@ Append-only log of wiki operations.
 - 2026-08-17 WRITE: query dlg-4ae8f810f0ec
 - 2026-08-25 WRITE: query dlg-29db072379dc
 - 2026-08-25 WRITE: anchor ANCH-github_push_status
+- 2026-08-26 WRITE: anchor ANCH-impulse_class_table_a_to_o
