@@ -37,3 +37,4 @@ Append-only log of wiki operations.
 - 2026-08-26 WRITE: anchor ANCH-impulse_class_table_a_to_o
 - 2026-08-26 WRITE: anchor ANCH-nfpa_1122_vs_1127_split
 - 2026-08-26 WRITE: anchor ANCH-nar_tra_cert_mapping
+- 2026-08-26 WRITE: query dlg-056a75803405
