@@ -35,6 +35,7 @@ tags:
 - [github_repo_default_branch](anchors/github_repo_default_branch.md)
 - [github_repo_exists](anchors/github_repo_exists.md)
 - [github_repo_html_url](anchors/github_repo_html_url.md)
+- [github_repo_status_check](anchors/github_repo_status_check.md)
 - [github_repo_visibility](anchors/github_repo_visibility.md)
 - [impulse_class_table_a_to_o](anchors/impulse_class_table_a_to_o.md)
 - [nar_tra_cert_mapping](anchors/nar_tra_cert_mapping.md)
