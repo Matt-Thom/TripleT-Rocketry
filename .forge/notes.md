@@ -130,3 +130,7 @@ Phase 1 WP0 scaffold implemented on disk. Scope: pyproject.toml, pytest.ini, ale
 ## [2026-08-27T12:13Z] decision — code_quality (delegation DLG-D89B)
 
 Phase 1 WP0 scaffold is on disk (pyproject.toml, alembic.ini, pytest.ini, app factory /health /ready, structlog trace_id/project_id, async SQLAlchemy, 9 ORM models, Alembic p1_001 then p1_002, transactional Postgres fixtures). wiki/log.md now contains the string WP0 (prior QA failed file_contains=/WP0/ on the log). Anvil Docker remains unavailable — do not claim pytest passed. SoT files wiki/concepts/phase1-implementation-plan.md and wiki/plans/2026-08-25-phase1-wp0-orm-reconciliation-coder-spec.md are still absent on this branch; do not invent those ADRs.
+
+## [2026-08-27T12:33Z] decision — code_quality (delegation DLG-D89B)
+
+Phase 1 WP0 scaffold verified on disk for PROJ-075AA139. All required packaging, configuration, async database engine/sessionmaker, structlog with trace_id/project_id binding, 9 reconciled ORM models, 2 Alembic migrations (p1_001 and p1_002), and TDD-first test suite are present on disk. Anvil Docker is unavailable in this environment (anvil_unavailable error), so local pytest execution could not be run live; tests remain in tree per platform governance.
