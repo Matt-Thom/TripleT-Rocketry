@@ -32,6 +32,7 @@ tags:
 - [github_init_session_probe](anchors/github_init_session_probe.md)
 - [github_init_status](anchors/github_init_status.md)
 - [github_push_status](anchors/github_push_status.md)
+- [github_repo_default_branch](anchors/github_repo_default_branch.md)
 - [github_repo_exists](anchors/github_repo_exists.md)
 - [github_repo_html_url](anchors/github_repo_html_url.md)
 - [impulse_class_table_a_to_o](anchors/impulse_class_table_a_to_o.md)
