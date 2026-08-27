@@ -49,3 +49,4 @@ Append-only log of wiki operations.
 - 2026-08-27 WRITE: anchor ANCH-wp0_worktree_status
 - 2026-08-27 WRITE: anchor ANCH-wp0_implementation_status
 - 2026-08-27 WRITE: anchor ANCH-wp0_session_probe
+- 2026-08-27 WRITE: anchor ANCH-wp0_session_probe_attempt3
