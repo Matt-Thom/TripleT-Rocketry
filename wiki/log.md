@@ -46,3 +46,4 @@ Append-only log of wiki operations.
 - 2026-08-27 WRITE: anchor ANCH-github_repo_default_branch
 - 2026-08-27 WRITE: anchor ANCH-github_repo_visibility
 - 2026-08-27 WRITE: anchor ANCH-github_repo_status_check
+- 2026-08-27 WRITE: anchor ANCH-wp0_worktree_status
