@@ -40,6 +40,7 @@ tags:
 - [impulse_class_table_a_to_o](anchors/impulse_class_table_a_to_o.md)
 - [nar_tra_cert_mapping](anchors/nar_tra_cert_mapping.md)
 - [nfpa_1122_vs_1127_split](anchors/nfpa_1122_vs_1127_split.md)
+- [wp0_implementation_status](anchors/wp0_implementation_status.md)
 - [wp0_worktree_status](anchors/wp0_worktree_status.md)
 
 ## Log
