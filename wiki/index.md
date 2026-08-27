@@ -44,6 +44,7 @@ tags:
 - [wp0_session_probe](anchors/wp0_session_probe.md)
 - [wp0_session_probe_attempt3](anchors/wp0_session_probe_attempt3.md)
 - [wp0_worktree_status](anchors/wp0_worktree_status.md)
+- [wp0_worktree_status_attempt3](anchors/wp0_worktree_status_attempt3.md)
 
 ## Log
 
