@@ -59,3 +59,4 @@ Append-only log of wiki operations.
 - 2026-09-01 WRITE: anchor ANCH-wp0_retry_session_start
 - 2026-09-01 WRITE: anchor ANCH-wp0_operator_action_required
 - 2026-09-01 WRITE: anchor ANCH-wp0_scaffold_session_probe
+- 2026-09-01 WRITE: anchor ANCH-wp0_scaffold_session_start

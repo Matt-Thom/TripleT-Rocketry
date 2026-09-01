@@ -45,6 +45,7 @@ tags:
 - [wp0_retry_session_start](anchors/wp0_retry_session_start.md)
 - [wp0_retry_tool_probe](anchors/wp0_retry_tool_probe.md)
 - [wp0_scaffold_session_probe](anchors/wp0_scaffold_session_probe.md)
+- [wp0_scaffold_session_start](anchors/wp0_scaffold_session_start.md)
 - [wp0_session_probe](anchors/wp0_session_probe.md)
 - [wp0_session_probe_attempt3](anchors/wp0_session_probe_attempt3.md)
 - [wp0_session_probe_dlg_a70b](anchors/wp0_session_probe_dlg_a70b.md)
