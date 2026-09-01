@@ -4,8 +4,8 @@ type: index
 title: Wiki Index
 source: forge
 project_id: PROJ-075AA139
-created: '2026-08-27'
-updated: '2026-08-27'
+created: '2026-09-01'
+updated: '2026-09-01'
 tags:
 - index
 ---
@@ -43,6 +43,7 @@ tags:
 - [wp0_implementation_status](anchors/wp0_implementation_status.md)
 - [wp0_session_probe](anchors/wp0_session_probe.md)
 - [wp0_session_probe_attempt3](anchors/wp0_session_probe_attempt3.md)
+- [wp0_session_start_dlg2453](anchors/wp0_session_start_dlg2453.md)
 - [wp0_worktree_status](anchors/wp0_worktree_status.md)
 - [wp0_worktree_status_attempt3](anchors/wp0_worktree_status_attempt3.md)
 
