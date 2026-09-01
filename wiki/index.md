@@ -45,6 +45,7 @@ tags:
 - [wp0_retry_session_start](anchors/wp0_retry_session_start.md)
 - [wp0_retry_tool_probe](anchors/wp0_retry_tool_probe.md)
 - [wp0_scaffold_blocked](anchors/wp0_scaffold_blocked.md)
+- [wp0_scaffold_retry_live_root](anchors/wp0_scaffold_retry_live_root.md)
 - [wp0_scaffold_session_probe](anchors/wp0_scaffold_session_probe.md)
 - [wp0_scaffold_session_start](anchors/wp0_scaffold_session_start.md)
 - [wp0_scaffold_write_attempt](anchors/wp0_scaffold_write_attempt.md)
