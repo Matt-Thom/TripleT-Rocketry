@@ -41,6 +41,7 @@ tags:
 - [nar_tra_cert_mapping](anchors/nar_tra_cert_mapping.md)
 - [nfpa_1122_vs_1127_split](anchors/nfpa_1122_vs_1127_split.md)
 - [wp0_implementation_status](anchors/wp0_implementation_status.md)
+- [wp0_retry_session_start](anchors/wp0_retry_session_start.md)
 - [wp0_retry_tool_probe](anchors/wp0_retry_tool_probe.md)
 - [wp0_session_probe](anchors/wp0_session_probe.md)
 - [wp0_session_probe_attempt3](anchors/wp0_session_probe_attempt3.md)
