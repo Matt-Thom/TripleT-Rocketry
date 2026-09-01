@@ -64,3 +64,4 @@ Append-only log of wiki operations.
 - 2026-09-01 WRITE: anchor ANCH-wp0_scaffold_write_attempt
 - 2026-09-01 WRITE: anchor ANCH-wp0_worktree_blocked_dlg_a70b_t1
 - 2026-09-01 WRITE: anchor ANCH-wp0_scaffold_retry_live_root
+- 2026-09-01 WRITE: anchor ANCH-wp0_scaffold_tools_after_add_fact
