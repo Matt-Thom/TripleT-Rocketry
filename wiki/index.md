@@ -42,6 +42,7 @@ tags:
 - [nfpa_1122_vs_1127_split](anchors/nfpa_1122_vs_1127_split.md)
 - [wp0_implementation_status](anchors/wp0_implementation_status.md)
 - [wp0_operator_action_required](anchors/wp0_operator_action_required.md)
+- [wp0_operator_clear_stale_worktree_dlg_a70b](anchors/wp0_operator_clear_stale_worktree_dlg_a70b.md)
 - [wp0_retry_session_start](anchors/wp0_retry_session_start.md)
 - [wp0_retry_tool_probe](anchors/wp0_retry_tool_probe.md)
 - [wp0_scaffold_blocked](anchors/wp0_scaffold_blocked.md)
