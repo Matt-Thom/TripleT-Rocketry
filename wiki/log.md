@@ -55,3 +55,4 @@ Append-only log of wiki operations.
 - 2026-09-01 WRITE: anchor ANCH-wp0_session_probe_dlg_a70b
 - 2026-09-01 WRITE: anchor ANCH-wp0_worktree_status_dlg_a70b
 - 2026-09-01 WRITE: anchor ANCH-wp0_session_start_dlg2453_retry
+- 2026-09-01 WRITE: anchor ANCH-wp0_retry_tool_probe
