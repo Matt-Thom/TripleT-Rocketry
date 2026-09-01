@@ -57,3 +57,4 @@ Append-only log of wiki operations.
 - 2026-09-01 WRITE: anchor ANCH-wp0_session_start_dlg2453_retry
 - 2026-09-01 WRITE: anchor ANCH-wp0_retry_tool_probe
 - 2026-09-01 WRITE: anchor ANCH-wp0_retry_session_start
+- 2026-09-01 WRITE: anchor ANCH-wp0_operator_action_required
