@@ -47,6 +47,7 @@ tags:
 - [wp0_session_start_dlg2453](anchors/wp0_session_start_dlg2453.md)
 - [wp0_worktree_status](anchors/wp0_worktree_status.md)
 - [wp0_worktree_status_attempt3](anchors/wp0_worktree_status_attempt3.md)
+- [wp0_worktree_status_dlg_a70b](anchors/wp0_worktree_status_dlg_a70b.md)
 
 ## Log
 
