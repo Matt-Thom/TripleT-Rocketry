@@ -20,3 +20,6 @@ venv/
 ENV/
 
 # wiki/index.md is regenerated on every wiki write. Hand edits will be clobbered.
+
+# Forge node worktrees — local scaffolding, never part of the tree
+projects/.forge/node-worktrees/

@@ -12,10 +12,16 @@ async def test_health_returns_ok(client: AsyncClient) -> None:
     """GET /health reports liveness without touching the database."""
     response = await client.get("/health")
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "ok"
-    assert payload["project_id"] == "PROJ-075AA139"
-    assert "environment" in payload
+    assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_health_does_not_disclose_configuration(client: AsyncClient) -> None:
+    """The unauthenticated liveness probe leaks no configuration detail."""
+    payload = (await client.get("/health")).json()
+    assert set(payload) == {"status"}
+    assert "project_id" not in payload
+    assert "environment" not in payload
 
 
 @pytest.mark.asyncio
