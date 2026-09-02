@@ -1,11 +1,11 @@
 ---
-id: SCH-PROJ-2AB3391E
+id: SCH-PROJ-075AA139
 type: schema
 title: Schema & Conventions
 source: forge
-project_id: PROJ-2AB3391E
-created: '2026-08-30'
-updated: '2026-08-30'
+project_id: PROJ-075AA139
+created: '2026-07-19'
+updated: '2026-07-19'
 tags:
 - schema
 ---
