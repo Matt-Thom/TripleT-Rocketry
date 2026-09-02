@@ -49,12 +49,13 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        """Liveness probe. Does not touch the database."""
-        return {
-            "status": "ok",
-            "project_id": settings.project_id,
-            "environment": settings.environment,
-        }
+        """Liveness probe. Does not touch the database.
+
+        Deliberately returns no configuration detail: this endpoint is
+        unauthenticated, and project_id / environment are already carried on
+        every log line via the structlog trace context.
+        """
+        return {"status": "ok"}
 
     @app.get("/ready")
     async def ready(response: Response) -> dict[str, str]:

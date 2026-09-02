@@ -4,6 +4,7 @@ See: wiki/concepts/phase1-implementation-plan.md
 """
 
 import pytest
+from pydantic import ValidationError
 
 from app.config import Settings
 
@@ -93,3 +94,21 @@ def test_multiple_settings_overrides_simultaneously(monkeypatch: pytest.MonkeyPa
     )
     assert settings.project_id == "PROJ-STRESS-TEST"
     assert settings.environment == "staging"
+
+
+def test_database_url_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings fails closed when TRIPLET_DATABASE_URL is absent.
+
+    Regression guard: a default here previously let the app and the DDL-issuing
+    test suite silently connect to whatever was listening on localhost.
+    """
+    monkeypatch.delenv("TRIPLET_DATABASE_URL", raising=False)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_blank_database_url_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A whitespace-only TRIPLET_DATABASE_URL is rejected, not accepted."""
+    monkeypatch.setenv("TRIPLET_DATABASE_URL", "   ")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

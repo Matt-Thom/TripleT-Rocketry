@@ -1,9 +1,15 @@
 """Pytest fixtures for WP0. Never mocks the database.
 
+The engine fixture issues ``create_all`` / ``drop_all`` DDL, so the suite
+refuses to run unless the operator has explicitly nominated a throwaway
+database via ``TRIPLET_TEST_DATABASE_URL``. See ``_require_test_database_url``.
+
 See: wiki/concepts/phase1-implementation-plan.md
 """
 
+import os
 from collections.abc import AsyncIterator
+from urllib.parse import urlsplit
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -30,6 +36,52 @@ from app.models import (  # noqa: F401 — register mappers on Base.metadata
     RocketConfiguration,
     User,
 )
+
+TEST_DATABASE_URL_ENV = "TRIPLET_TEST_DATABASE_URL"
+
+_MISSING_TEST_DB_MESSAGE = f"""
+{TEST_DATABASE_URL_ENV} is not set.
+
+This suite creates and DROPS every table in the target database, so it will
+not fall back to TRIPLET_DATABASE_URL or to any built-in default. Point it at
+a disposable database whose name contains "test", for example:
+
+    createdb triplet_test
+    export {TEST_DATABASE_URL_ENV}=postgresql+asyncpg://postgres:postgres@localhost:5432/triplet_test
+"""
+
+
+def _require_test_database_url() -> str:
+    """Return the nominated test database URL, or abort the run.
+
+    Guards the ``drop_all`` in the ``engine`` fixture: without this, an unset
+    environment silently resolved to the developer's default local database.
+    """
+    url = os.environ.get(TEST_DATABASE_URL_ENV, "").strip()
+    if not url:
+        raise pytest.UsageError(_MISSING_TEST_DB_MESSAGE)
+
+    database = urlsplit(url).path.lstrip("/")
+    if not database:
+        raise pytest.UsageError(
+            f"{TEST_DATABASE_URL_ENV} has no database name in its path: {url!r}"
+        )
+    if "test" not in database.lower():
+        raise pytest.UsageError(
+            f"Refusing to run: {TEST_DATABASE_URL_ENV} points at database "
+            f"{database!r}, whose name does not contain 'test'. This suite drops "
+            f"every table it finds. Rename the database or pick another one."
+        )
+    return url
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Pin the application settings to the nominated test database."""
+    url = _require_test_database_url()
+    # The app under test must talk to the same throwaway database the fixtures
+    # manage, so override rather than inherit any ambient TRIPLET_DATABASE_URL.
+    os.environ["TRIPLET_DATABASE_URL"] = url
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")
