@@ -72,7 +72,7 @@ class Flight(AuditMixin, Base):
         nullable=False,
     )
 
-    flyer = relationship("User")
+    flyer = relationship("User", foreign_keys=[flyer_id])
     rocket_configuration = relationship(
         "RocketConfiguration",
         back_populates="flights",

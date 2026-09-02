@@ -4,8 +4,8 @@ See: wiki/concepts/phase1-implementation-plan.md
 """
 
 from app.models.enums import (
-    CertLevel,
     CertifyingBody,
+    CertLevel,
     FlightOutcome,
     ImpulseClass,
 )

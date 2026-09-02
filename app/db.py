@@ -4,6 +4,7 @@ See: wiki/concepts/phase1-implementation-plan.md
 """
 
 from collections.abc import AsyncIterator
+from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -23,6 +24,7 @@ class Base(DeclarativeBase):
     """Declarative base for all Phase 1 ORM models."""
 
 
+@lru_cache(maxsize=4)
 def create_engine_from_url(url: str) -> AsyncEngine:
     """Create an async engine for the given PostgreSQL URL."""
     return create_async_engine(url, pool_pre_ping=True)

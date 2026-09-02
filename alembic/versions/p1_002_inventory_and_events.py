@@ -10,6 +10,7 @@ See: wiki/concepts/phase1-implementation-plan.md
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "p1_002"

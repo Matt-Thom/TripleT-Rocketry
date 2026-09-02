@@ -40,6 +40,6 @@ class MotorInventory(AuditMixin, Base):
     acquired_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    user = relationship("User", back_populates="motor_inventories")
+    user = relationship("User", back_populates="motor_inventories", foreign_keys=[user_id])
     motor = relationship("Motor", back_populates="inventories")
     flights = relationship("Flight", back_populates="motor_inventory")

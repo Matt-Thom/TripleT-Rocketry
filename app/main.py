@@ -57,11 +57,16 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/ready")
-    async def ready() -> dict[str, str]:
+    async def ready(response: Response) -> dict[str, str]:
         """Readiness probe. Pings Postgres with SELECT 1."""
-        factory = get_session_factory()
-        async with factory() as session:
-            await session.execute(text("SELECT 1"))
-        return {"status": "ready", "database": "ok"}
+        try:
+            factory = get_session_factory()
+            async with factory() as session:
+                await session.execute(text("SELECT 1"))
+            return {"status": "ready", "database": "ok"}
+        except Exception as exc:
+            logger.warning("readiness_probe_failed", error=str(exc))
+            response.status_code = 503
+            return {"status": "unavailable", "database": "error"}
 
     return app

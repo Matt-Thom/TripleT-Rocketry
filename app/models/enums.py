@@ -32,13 +32,13 @@ class ImpulseClass(StrEnum):
     F = "F"
     G = "G"
     H = "H"
-    I = "I"
+    I = "I"  # noqa: E741
     J = "J"
     K = "K"
     L = "L"
     M = "M"
     N = "N"
-    O = "O"
+    O = "O"  # noqa: E741
 
 
 class PropellantType(StrEnum):

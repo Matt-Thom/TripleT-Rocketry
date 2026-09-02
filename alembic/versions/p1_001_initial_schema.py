@@ -10,8 +10,9 @@ See: wiki/concepts/phase1-implementation-plan.md
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "p1_001"
 down_revision: str | None = None

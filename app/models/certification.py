@@ -34,4 +34,4 @@ class Certification(AuditMixin, Base):
     )
     override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    user = relationship("User", back_populates="certifications")
+    user = relationship("User", back_populates="certifications", foreign_keys=[user_id])

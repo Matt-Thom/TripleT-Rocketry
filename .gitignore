@@ -1,3 +1,22 @@
 .DS_Store
 Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+ENV/
+
 # wiki/index.md is regenerated on every wiki write. Hand edits will be clobbered.

@@ -38,6 +38,18 @@ class User(Base):
         nullable=False,
     )
 
-    certifications = relationship("Certification", back_populates="user")
-    rockets = relationship("Rocket", back_populates="owner")
-    motor_inventories = relationship("MotorInventory", back_populates="user")
+    certifications = relationship(
+        "Certification",
+        back_populates="user",
+        foreign_keys="Certification.user_id",
+    )
+    rockets = relationship(
+        "Rocket",
+        back_populates="owner",
+        foreign_keys="Rocket.owner_id",
+    )
+    motor_inventories = relationship(
+        "MotorInventory",
+        back_populates="user",
+        foreign_keys="MotorInventory.user_id",
+    )

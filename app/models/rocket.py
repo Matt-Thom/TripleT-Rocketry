@@ -36,7 +36,7 @@ class Rocket(AuditMixin, Base):
         nullable=False,
     )
 
-    owner = relationship("User", back_populates="rockets")
+    owner = relationship("User", back_populates="rockets", foreign_keys=[owner_id])
     configurations = relationship(
         "RocketConfiguration",
         back_populates="rocket",

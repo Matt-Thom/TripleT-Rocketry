@@ -53,6 +53,7 @@ async def engine() -> AsyncIterator[AsyncEngine]:
     finally:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.drop_all)
+            await connection.execute(text("DROP TABLE IF EXISTS alembic_version CASCADE"))
         await engine.dispose()
 
 

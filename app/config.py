@@ -17,9 +17,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/triplet"
-    )
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/triplet"
     project_id: str = "PROJ-075AA139"
     environment: str = "development"
 
