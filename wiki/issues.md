@@ -715,3 +715,44 @@ Quality findings and blocked-sync notices.
 - queries/dlg-c8e28f260484.md: stale — last updated 2026-07-20
 - queries/dlg-fea38264f0f6.md: stale — last updated 2026-07-20
 - schema.md: stale — last updated 2026-07-19
+
+## 2026-09-03 — LINT findings
+
+- anchors/_probe_list_projects.md: stale — last updated 2026-07-23
+- anchors/github_create_repo_status.md: stale — last updated 2026-08-26
+- anchors/github_create_repo_url.md: stale — last updated 2026-08-26
+- anchors/github_init_ensure_repo_attempt.md: stale — last updated 2026-07-23
+- anchors/github_init_local_git_state.md: stale — last updated 2026-07-23
+- anchors/github_init_probe.md: stale — last updated 2026-07-23
+- anchors/github_init_session_probe.md: stale — last updated 2026-07-23
+- anchors/github_init_status.md: stale — last updated 2026-07-23
+- anchors/github_push_status.md: stale — last updated 2026-08-25
+- anchors/impulse_class_table_a_to_o.md: stale — last updated 2026-08-26
+- anchors/nar_tra_cert_mapping.md: stale — last updated 2026-08-26
+- anchors/nfpa_1122_vs_1127_split.md: stale — last updated 2026-08-26
+- architecture.md: malformed frontmatter — unknown type: architecture
+- domains.md: malformed frontmatter — unknown type: domains
+- issues.md: stale — last updated 2026-07-19
+- log.md: stale — last updated 2026-07-19
+- overview.md: stale — last updated 2026-07-19
+- queries/dlg-02d76483b970.md: stale — last updated 2026-07-20
+- queries/dlg-056a75803405.md: stale — last updated 2026-08-26
+- queries/dlg-1a16db0a5fae.md: stale — last updated 2026-08-25
+- queries/dlg-26da2e691c84.md: stale — last updated 2026-07-20
+- queries/dlg-29db072379dc.md: stale — last updated 2026-08-25
+- queries/dlg-3a9ebc03e071.md: stale — last updated 2026-07-20
+- queries/dlg-4297421d5b98.md: stale — last updated 2026-07-23
+- queries/dlg-4ae8f810f0ec.md: stale — last updated 2026-08-17
+- queries/dlg-56a59a75e366.md: stale — last updated 2026-07-20
+- queries/dlg-6a988d86f256.md: stale — last updated 2026-07-20
+- queries/dlg-730f914f467b.md: stale — last updated 2026-07-19
+- queries/dlg-8ebc7b1303f0.md: stale — last updated 2026-07-20
+- queries/dlg-97936ebe2e2f.md: stale — last updated 2026-07-19
+- queries/dlg-9dc608935f5a.md: stale — last updated 2026-07-20
+- queries/dlg-a6c7eca7138a.md: stale — last updated 2026-07-20
+- queries/dlg-abf59861a253.md: stale — last updated 2026-07-19
+- queries/dlg-bf2dd68e4e44.md: stale — last updated 2026-08-26
+- queries/dlg-c8e28f260484.md: stale — last updated 2026-07-20
+- queries/dlg-fea38264f0f6.md: stale — last updated 2026-07-20
+- queries/phase1-step-implemented.md: malformed frontmatter — missing required field(s): ['created', 'updated']
+- schema.md: stale — last updated 2026-07-19

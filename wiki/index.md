@@ -4,8 +4,8 @@ type: index
 title: Wiki Index
 source: forge
 project_id: PROJ-075AA139
-created: '2026-09-01'
-updated: '2026-09-01'
+created: '2026-09-03'
+updated: '2026-09-03'
 tags:
 - index
 ---
@@ -24,6 +24,7 @@ tags:
 ## Anchor
 
 - [_probe_list_projects](anchors/_probe_list_projects.md)
+- [api_specification_entity](anchors/api_specification_entity.md)
 - [github_create_repo_status](anchors/github_create_repo_status.md)
 - [github_create_repo_url](anchors/github_create_repo_url.md)
 - [github_init_ensure_repo_attempt](anchors/github_init_ensure_repo_attempt.md)
