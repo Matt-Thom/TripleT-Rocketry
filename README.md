@@ -5,50 +5,68 @@ Flight Logbook + Range Companion for model and high-power rocketry.
 This project is managed by Forge. See [`AI.md`](AI.md) for AI collaboration
 guidance and `wiki/index.md` for architecture.
 
+The service is a **Cloudflare Worker** (TypeScript + Hono) backed by
+**D1**. See [`wiki/concepts/cloudflare-deployment.md`](wiki/concepts/cloudflare-deployment.md)
+for the deployment topology and why the original FastAPI/PostgreSQL stack could
+not be lifted onto Workers unchanged.
+
 ## Requirements
 
-- Python 3.11+
-- PostgreSQL
-- [`uv`](https://docs.astral.sh/uv/)
+- Node.js 24+
+- A Cloudflare account (only for deploying; local development needs no login)
 
-## Configuration
-
-All settings come from `TRIPLET_*` environment variables (or a local `.env`).
-Copy the template and fill it in:
+## Running locally
 
 ```bash
-cp .env.example .env
-```
-
-`TRIPLET_DATABASE_URL` is **required** and has no default — the app fails to
-start without it rather than falling back to a localhost guess.
-
-## Running
-
-```bash
-uv sync --extra dev
-uv run alembic upgrade head
-uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+npm install
+cp .dev.vars.example .dev.vars      # keeps Wrangler away from the Python .env
+npm run db:migrate:local            # apply migrations to the local D1
+npm run dev                         # http://127.0.0.1:8787
 ```
 
 Probes: `GET /health` (liveness, no database) and `GET /ready` (readiness,
-pings Postgres). Both echo an `X-Trace-Id` header.
+queries D1). Both echo an `X-Trace-Id` header, honouring an inbound one.
 
 ## Tests
 
-The suite runs against real Postgres and **creates and drops every table** in
-the target database. It therefore requires a separate, disposable database
-nominated through `TRIPLET_TEST_DATABASE_URL`; it will not fall back to
-`TRIPLET_DATABASE_URL`. The database name must contain `test`.
+The suite runs inside `workerd` via `@cloudflare/vitest-pool-workers`, against
+a real local D1 — never a mock. Migrations are applied to the test database
+automatically, so there is nothing to set up:
 
 ```bash
-createdb triplet_test
-export TRIPLET_TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/triplet_test
-uv run pytest
+npm test
+npm run typecheck
 ```
 
-Lint:
+## Database changes
+
+`src/db/schema.ts` is the source of truth. After editing it:
 
 ```bash
-uv run ruff check .
+npm run db:generate                 # writes a new file into migrations/
 ```
+
+Commit the generated migration alongside the schema change — CI fails if the
+two have drifted.
+
+## Deploying
+
+| Branch | Target | Worker | D1 database |
+|---|---|---|---|
+| `develop` | staging | `triplet-rocketry-staging` | `triplet-rocketry-staging` |
+| `main` | production | `triplet-rocketry` | `triplet-rocketry` |
+
+Pushes deploy automatically via `.github/workflows/deploy.yml`. Nothing else
+deploys; pull requests run CI only.
+
+First-time setup is documented in
+[`wiki/concepts/cloudflare-deployment.md`](wiki/concepts/cloudflare-deployment.md)
+— create the two D1 databases, paste their ids into `wrangler.jsonc`, and set
+the `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+
+## Legacy FastAPI service
+
+The original Python service still lives in `app/`, `alembic/` and `tests/`. It
+is retained only as the reference the Worker was ported from and is **not
+deployed**. See [`docs/legacy-fastapi.md`](docs/legacy-fastapi.md) for how to
+run it, and `wiki/concepts/cloudflare-deployment.md` for the removal plan.

@@ -1,0 +1,8 @@
+# Local-only secrets for `wrangler dev`. Copy to `.dev.vars` (gitignored).
+#
+# Keep this file present even while it is empty of real secrets: Wrangler
+# falls back to reading the repo's `.env` when no `.dev.vars` exists, and that
+# `.env` holds the *Python* service's Postgres credentials, which have nothing
+# to do with the Worker and must not be bound into it.
+#
+# The Worker's non-secret configuration lives in wrangler.jsonc `vars`.
