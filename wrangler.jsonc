@@ -33,7 +33,7 @@
     {
       "binding": "DB",
       "database_name": "triplet-rocketry",
-      "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
+      "database_id": "6590bf9c-a4fc-4e60-a4a3-cfe918e5a965",
       "migrations_dir": "migrations"
     }
   ],
@@ -56,7 +56,7 @@
         {
           "binding": "DB",
           "database_name": "triplet-rocketry-staging",
-          "database_id": "REPLACE_WITH_STAGING_D1_ID",
+          "database_id": "1e4b6898-722a-4ef3-8457-5d62a1ba44fa",
           "migrations_dir": "migrations"
         }
       ],
