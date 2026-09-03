@@ -715,3 +715,22 @@ Quality findings and blocked-sync notices.
 - queries/dlg-c8e28f260484.md: stale — last updated 2026-07-20
 - queries/dlg-fea38264f0f6.md: stale — last updated 2026-07-20
 - schema.md: stale — last updated 2026-07-19
+
+## 2026-09-03 — Port to Cloudflare Workers
+
+- `wiki/concepts/phase1-implementation-plan.md` is cited by every module
+  docstring in `app/` and `src/` but **does not exist**. Either write it or drop
+  the citations.
+- `wiki/entities/` is empty, yet `app/models/*.py` cite `wiki/entities/user.md`,
+  `rocket.md`, `motor.md`, `flight.md`, `launch-site.md`, `launch-event.md` and
+  `inventory.md`. The `src/db/schema.ts` port carries the same entities and the
+  same missing pages.
+- `wiki/overview.md` is still the placeholder line "Purpose, linked-repo
+  summary, metadata." and does not describe the (now Cloudflare) tech stack.
+- The repo `.env` names two different passwords for the same PostgreSQL role
+  (`TRIPLET_DATABASE_URL` vs `TRIPLET_TEST_DATABASE_URL`), so the legacy test
+  suite cannot authenticate against a database the app can reach. Only affects
+  the retained Python service — see `docs/legacy-fastapi.md`.
+- `tests/conftest.py` parses `TRIPLET_TEST_DATABASE_URL` with `urlsplit`, which
+  silently loses the database name when the password contains a raw `#`.
+  SQLAlchemy accepts that URL, so the app starts and only the tests fail.

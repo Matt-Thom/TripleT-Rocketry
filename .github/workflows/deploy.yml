@@ -1,0 +1,76 @@
+name: Deploy
+
+# Branch-to-environment mapping, the single source of truth for where a commit
+# lands:
+#
+#   develop -> staging     (Worker "triplet-rocketry-staging", its own D1)
+#   main    -> production  (Worker "triplet-rocketry",         its own D1)
+#
+# Nothing else deploys. Pull requests run CI only.
+on:
+  push:
+    branches: [main, develop]
+
+# Never let two deploys to the same target overlap: D1 migrations are applied
+# before the Worker is uploaded, and interleaving them could leave the live
+# Worker running against a half-migrated database.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Apply D1 migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            ${{ github.ref_name == 'main'
+              && 'd1 migrations apply triplet-rocketry --remote --env=""'
+              || 'd1 migrations apply triplet-rocketry-staging --remote --env staging' }}
+
+      - name: Deploy Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            ${{ github.ref_name == 'main' && 'deploy --env=""' || 'deploy --env staging' }}
+
+      - name: Smoke test the deployment
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            URL="https://rocketry.thom.au"
+          else
+            URL="https://rocketry-dev.thom.au"
+          fi
+          # A brand-new custom domain needs a moment for DNS and the edge
+          # certificate, so the first deploy to a hostname is given some slack
+          # rather than failing the run outright.
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --max-time 10 "$URL/health"; then
+              echo
+              curl --fail --silent --show-error --max-time 10 "$URL/ready"
+              echo
+              exit 0
+            fi
+            echo "attempt $attempt: $URL not answering yet, retrying in 20s"
+            sleep 20
+          done
+          echo "::error::$URL did not serve /health after the deploy"
+          exit 1
