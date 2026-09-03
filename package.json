@@ -10,11 +10,11 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply triplet-rocketry --local",
+    "db:migrate:local": "wrangler d1 migrations apply triplet-rocketry --local --env=\"\"",
     "db:migrate:staging": "wrangler d1 migrations apply triplet-rocketry-staging --remote --env staging",
-    "db:migrate:production": "wrangler d1 migrations apply triplet-rocketry --remote",
+    "db:migrate:production": "wrangler d1 migrations apply triplet-rocketry --remote --env=\"\"",
     "deploy:staging": "wrangler deploy --env staging",
-    "deploy:production": "wrangler deploy",
+    "deploy:production": "wrangler deploy --env=\"\"",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {

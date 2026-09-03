@@ -25,18 +25,18 @@ The service runs as a **Cloudflare Worker** (TypeScript + Hono) backed by
 
 ## Topology
 
-| Branch | Environment | Worker | D1 database | Config |
-|---|---|---|---|---|
-| `develop` | staging | `triplet-rocketry-staging` | `triplet-rocketry-staging` | `env.staging` in `wrangler.jsonc` |
-| `main` | production | `triplet-rocketry` | `triplet-rocketry` | top level of `wrangler.jsonc` |
+| Branch | Environment | Hostname | Worker | D1 database | Config |
+|---|---|---|---|---|---|
+| `develop` | staging | `rocketry-dev.thom.au` | `triplet-rocketry-staging` | `triplet-rocketry-staging` | `env.staging` in `wrangler.jsonc` |
+| `main` | production | `rocketry.thom.au` | `triplet-rocketry` | `triplet-rocketry` | top level of `wrangler.jsonc` |
 
 ```mermaid
 flowchart LR
   PR[Pull request] -->|CI only| CI[typecheck / test / migration drift]
   PR --> DEV[develop]
-  DEV -->|push| S[Deploy staging<br/>triplet-rocketry-staging]
+  DEV -->|push| S[Deploy staging<br/>rocketry-dev.thom.au]
   DEV -->|PR, human approval| MAIN[main]
-  MAIN -->|push| P[Deploy production<br/>triplet-rocketry]
+  MAIN -->|push| P[Deploy production<br/>rocketry.thom.au]
   S --> SD[(D1 triplet-rocketry-staging)]
   P --> PD[(D1 triplet-rocketry)]
 ```
@@ -101,9 +101,12 @@ catches mistakes at compile time.
 3. Create the `develop` branch and set branch protection so `main` only
    advances through a reviewed pull request.
 
-4. For custom hostnames, uncomment the `routes` entries in `wrangler.jsonc` and
-   set the `PRODUCTION_URL` / `STAGING_URL` repository variables so the deploy
-   workflow's smoke test has something to hit.
+4. The `thom.au` zone must sit on the same Cloudflare account. The
+   `custom_domain` routes in `wrangler.jsonc` make Wrangler create the DNS
+   record and provision the edge certificate on the first deploy to each
+   hostname; nothing needs adding to DNS by hand. If the zone lives on another
+   account the deploy fails with a "zone not found" error, which is the signal
+   to move the zone rather than to add a CNAME.
 
 ## Migrations
 

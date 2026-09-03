@@ -38,8 +38,9 @@
     }
   ],
 
-  // Production hostname. Uncomment once the zone is on this Cloudflare account.
-  // "routes": [{ "pattern": "REPLACE_WITH_PRODUCTION_HOSTNAME", "custom_domain": true }],
+  // Requires the thom.au zone to be on this Cloudflare account. Wrangler
+  // creates the DNS record and the certificate on first deploy.
+  "routes": [{ "pattern": "rocketry.thom.au", "custom_domain": true }],
 
   "env": {
     "staging": {
@@ -58,9 +59,8 @@
           "database_id": "REPLACE_WITH_STAGING_D1_ID",
           "migrations_dir": "migrations"
         }
-      ]
-      // Staging hostname. Uncomment once the zone is on this Cloudflare account.
-      // "routes": [{ "pattern": "REPLACE_WITH_STAGING_HOSTNAME", "custom_domain": true }]
+      ],
+      "routes": [{ "pattern": "rocketry-dev.thom.au", "custom_domain": true }]
     }
   }
 }

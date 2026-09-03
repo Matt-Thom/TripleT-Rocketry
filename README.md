@@ -51,10 +51,10 @@ two have drifted.
 
 ## Deploying
 
-| Branch | Target | Worker | D1 database |
-|---|---|---|---|
-| `develop` | staging | `triplet-rocketry-staging` | `triplet-rocketry-staging` |
-| `main` | production | `triplet-rocketry` | `triplet-rocketry` |
+| Branch | Target | Hostname | Worker | D1 database |
+|---|---|---|---|---|
+| `develop` | staging | `rocketry-dev.thom.au` | `triplet-rocketry-staging` | `triplet-rocketry-staging` |
+| `main` | production | `rocketry.thom.au` | `triplet-rocketry` | `triplet-rocketry` |
 
 Pushes deploy automatically via `.github/workflows/deploy.yml`. Nothing else
 deploys; pull requests run CI only.
@@ -62,7 +62,9 @@ deploys; pull requests run CI only.
 First-time setup is documented in
 [`wiki/concepts/cloudflare-deployment.md`](wiki/concepts/cloudflare-deployment.md)
 — create the two D1 databases, paste their ids into `wrangler.jsonc`, and set
-the `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` repository secrets.
+the `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` repository secrets. Both
+hostnames are declared as `custom_domain` routes, so Wrangler provisions their
+DNS records and certificates on the first deploy.
 
 ## Legacy FastAPI service
 

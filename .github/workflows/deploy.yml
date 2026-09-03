@@ -40,7 +40,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: >-
             ${{ github.ref_name == 'main'
-              && 'd1 migrations apply triplet-rocketry --remote'
+              && 'd1 migrations apply triplet-rocketry --remote --env=""'
               || 'd1 migrations apply triplet-rocketry-staging --remote --env staging' }}
 
       - name: Deploy Worker
@@ -49,22 +49,28 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: >-
-            ${{ github.ref_name == 'main' && 'deploy' || 'deploy --env staging' }}
+            ${{ github.ref_name == 'main' && 'deploy --env=""' || 'deploy --env staging' }}
 
       - name: Smoke test the deployment
         run: |
           set -euo pipefail
-          # Replace with the custom hostnames once the routes in wrangler.jsonc
-          # are uncommented.
           if [ "${{ github.ref_name }}" = "main" ]; then
-            URL="${{ vars.PRODUCTION_URL }}"
+            URL="https://rocketry.thom.au"
           else
-            URL="${{ vars.STAGING_URL }}"
+            URL="https://rocketry-dev.thom.au"
           fi
-          if [ -z "$URL" ]; then
-            echo "No deployment URL configured; skipping smoke test."
-            exit 0
-          fi
-          curl --fail --silent --show-error "$URL/health"
-          echo
-          curl --fail --silent --show-error "$URL/ready"
+          # A brand-new custom domain needs a moment for DNS and the edge
+          # certificate, so the first deploy to a hostname is given some slack
+          # rather than failing the run outright.
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --max-time 10 "$URL/health"; then
+              echo
+              curl --fail --silent --show-error --max-time 10 "$URL/ready"
+              echo
+              exit 0
+            fi
+            echo "attempt $attempt: $URL not answering yet, retrying in 20s"
+            sleep 20
+          done
+          echo "::error::$URL did not serve /health after the deploy"
+          exit 1
