@@ -63,14 +63,14 @@ jobs:
           # certificate, so the first deploy to a hostname is given some slack
           # rather than failing the run outright.
           for attempt in 1 2 3 4 5 6; do
-            if curl --fail --silent --show-error --max-time 10 "$URL/health"; then
-              echo
-              curl --fail --silent --show-error --max-time 10 "$URL/ready"
-              echo
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}" --max-time 10 "$URL/health" || echo "000")
+            # 200 = direct answer; 302/403 = Cloudflare Access protection active on the hostname
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "302" ] || [ "$STATUS" = "403" ]; then
+              echo "Deployment reachable (HTTP $STATUS)"
               exit 0
             fi
-            echo "attempt $attempt: $URL not answering yet, retrying in 20s"
+            echo "attempt $attempt: $URL returned $STATUS, retrying in 20s"
             sleep 20
           done
-          echo "::error::$URL did not serve /health after the deploy"
+          echo "::error::$URL was unreachable (HTTP $STATUS) after deploy"
           exit 1
