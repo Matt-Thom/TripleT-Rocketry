@@ -55,7 +55,7 @@ export const inventoryRouter = new Hono<{ Bindings: Bindings; Variables: Variabl
  */
 export async function listInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
   const query = c.req.query()
   const filter = query.filter || 'all'
 
@@ -211,6 +211,7 @@ export async function listInventoryHandler(c: any) {
     title: 'Flight & Component Inventory',
     activeTab: 'inventory',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -444,11 +445,14 @@ export async function adjustInventoryHandler(c: any) {
  * Component Form View (GET /inventory/components/new).
  */
 export async function newComponentFormHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = await getActiveFlyer(db)
   const content = addComponentFormView()
   const fullHtml = pageLayout({
     title: 'Add Component',
     activeTab: 'inventory',
     content,
+    user: flyer,
   })
   return c.html(fullHtml, 200, {
     'Content-Type': 'text/html; charset=utf-8',
@@ -710,6 +714,7 @@ export async function custodyLedgerHandler(c: any) {
     title: 'Chain-of-Custody Ledger',
     activeTab: 'inventory',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, { 'Content-Type': 'text/html; charset=utf-8' })
@@ -720,7 +725,7 @@ export async function custodyLedgerHandler(c: any) {
  */
 export async function newTransactionFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
   const query = c.req.query()
 
   const motorInvId = query.motor_inventory_id || query.motorInventoryId
@@ -783,6 +788,7 @@ export async function newTransactionFormHandler(c: any) {
     title: 'Record Movement Event',
     activeTab: 'inventory',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, { 'Content-Type': 'text/html; charset=utf-8' })

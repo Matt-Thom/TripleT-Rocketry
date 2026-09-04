@@ -43,7 +43,7 @@ export const flightsRouter = new Hono<{ Bindings: Bindings; Variables: Variables
  */
 flightsRouter.get('/', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  await getActiveFlyer(db)
+  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   const flightRows = await db
     .select({
@@ -107,6 +107,7 @@ flightsRouter.get('/', async (c) => {
     title: 'Flight Logbook',
     activeTab: 'flights',
     content,
+    user: activeFlyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -196,6 +197,7 @@ flightsRouter.get('/new', async (c) => {
     title: 'Log Flight',
     activeTab: 'flights',
     content,
+    user: activeFlyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -566,6 +568,7 @@ flightsRouter.post('/', async (c) => {
       title: 'Preflight Safety Warnings',
       activeTab: 'flights',
       content,
+      user: (c.get as any)('user') || null,
     })
 
     return c.html(fullHtml, 422, {
@@ -714,6 +717,7 @@ flightsRouter.get('/:id', async (c) => {
     title,
     activeTab: 'flights',
     content,
+    user: (c.get as any)('user') || flyer,
   })
 
   return c.html(fullHtml, 200, {

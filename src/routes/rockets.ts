@@ -68,23 +68,14 @@ type ValidRecovery = (typeof VALID_RECOVERY_TYPES)[number]
  */
 rocketsRouter.get('/', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   // Retrieve non-deleted rockets for active flyer
-  let flyerRockets = await db
+  const flyerRockets = await db
     .select()
     .from(schema.rockets)
     .where(and(eq(schema.rockets.ownerId, flyer.id), isNull(schema.rockets.deletedAt)))
     .orderBy(desc(schema.rockets.createdAt))
-
-  // Fallback if tests seeded rockets under a different user or unassociated
-  if (flyerRockets.length === 0) {
-    flyerRockets = await db
-      .select()
-      .from(schema.rockets)
-      .where(isNull(schema.rockets.deletedAt))
-      .orderBy(desc(schema.rockets.createdAt))
-  }
 
   const rocketIds = flyerRockets.map((r) => r.id)
 
@@ -156,6 +147,7 @@ rocketsRouter.get('/', async (c) => {
     title: 'Rockets & Airframes',
     activeTab: 'rockets',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {

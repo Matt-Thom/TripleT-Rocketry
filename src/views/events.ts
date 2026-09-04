@@ -65,9 +65,7 @@ function formatOutcomeBadge(outcome: string | null | undefined) {
  * date range (starts_on to ends_on), designated RSO and LCO, pad count,
  * weather notes, and "+ Add Launch Event" button.
  */
-export function eventsListView(
-  events: (EventWithSite | any)[]
-): HtmlEscapedString | Promise<HtmlEscapedString> {
+export function eventsListView(events: EventWithSite[], user?: any): HtmlEscapedString | Promise<HtmlEscapedString> {
   const content = html`
     <div class="space-y-6">
       <!-- Header with Action -->
@@ -77,7 +75,7 @@ export function eventsListView(
             <span>📅</span> Launch Events & Meets
           </h1>
           <p class="text-sm text-slate-400 mt-1">
-            Organized club launches, range operations, safety officers, and flight records.
+            Club launches, scheduled range dates, Range Safety Officers (RSO), and weather logs.
           </p>
         </div>
         <a
@@ -85,109 +83,96 @@ export function eventsListView(
           class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm self-start sm:self-auto"
         >
           <span class="text-base leading-none font-bold">+</span>
-          <span>Add Launch Event</span>
+          <span>Schedule Event</span>
         </a>
       </div>
 
-      <!-- Events List / Cards -->
+      <!-- Events Grid / List -->
       ${events.length === 0
         ? html`
             <div class="bg-slate-850 border border-slate-800 rounded-xl p-12 text-center">
               <div class="text-4xl mb-3">📅</div>
               <h3 class="text-lg font-semibold text-white">No Launch Events Scheduled</h3>
               <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
-                No launch meets or events have been created yet. Schedule your next launch window to assign officers and record flights.
+                No club launches or range events are on the schedule. Create an event to designate safety officers and organize club flights.
               </p>
               <div class="mt-6">
                 <a
                   href="/events/new"
                   class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
                 >
-                  + Add Launch Event
+                  + Schedule Event
                 </a>
               </div>
             </div>
           `
         : html`
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              ${events.map((item) => {
-                // Support both flat join and nested event object
-                const evt: LaunchEvent = item.event ?? item
-                const siteName =
-                  item.site?.name ??
-                  item.launchSite?.name ??
-                  item.siteName ??
-                  (item.site && typeof item.site === 'object' ? item.site.name : null) ??
-                  'Launch Site'
-                const siteId = item.site?.id ?? item.launchSiteId ?? evt.launchSiteId
-                const rso = item.rsoName ?? evt.rsoUserId
-                const lco = item.lcoName ?? evt.lcoUserId
-
-                return html`
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              ${events.map(
+                (evt) => html`
                   <div class="bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all shadow-sm">
                     <div>
-                      <!-- Title & Pad Count -->
-                      <div class="flex items-start justify-between gap-3">
+                      <div class="flex items-start justify-between gap-2">
                         <h2 class="text-lg font-bold text-white hover:text-brand-400 transition-colors">
                           <a href="/events/${evt.id}">${evt.name}</a>
                         </h2>
                         ${evt.padCount != null
-                          ? html`<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-800 text-brand-300 border border-slate-700 whitespace-nowrap">
-                              ${evt.padCount} Pads
-                            </span>`
+                          ? html`<span class="px-2 py-0.5 bg-slate-800 text-slate-300 text-xs rounded font-medium border border-slate-700">${evt.padCount} Pads</span>`
                           : ''}
                       </div>
 
-                      <!-- Host Launch Site -->
-                      <div class="mt-2.5 flex items-center gap-1.5 text-xs">
-                        <span class="text-slate-400">📍 Host Field:</span>
-                        ${siteId
-                          ? html`<a href="/sites/${siteId}" class="font-medium text-brand-400 hover:text-brand-300 underline">${siteName}</a>`
-                          : html`<span class="text-slate-300">${siteName}</span>`}
-                      </div>
-
-                      <!-- Dates -->
-                      <div class="mt-2 flex items-center gap-1.5 text-xs text-slate-300">
-                        <span class="text-slate-400">🗓️ Date Range:</span>
+                      <div class="mt-2 text-xs text-slate-300 flex items-center gap-1.5">
+                        <span class="text-slate-500">Dates:</span>
                         ${formatDateRange(evt.startsOn, evt.endsOn)}
                       </div>
 
-                      <!-- Safety Officers -->
-                      <div class="mt-3 pt-2.5 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span class="text-slate-500 block text-[11px] uppercase tracking-wider font-semibold">RSO</span>
-                          <span class="text-slate-300 font-medium">${rso || 'None designated'}</span>
-                        </div>
-                        <div>
-                          <span class="text-slate-500 block text-[11px] uppercase tracking-wider font-semibold">LCO</span>
-                          <span class="text-slate-300 font-medium">${lco || 'None designated'}</span>
-                        </div>
+                      ${evt.site
+                        ? html`
+                            <div class="mt-1.5 text-xs text-slate-400 flex items-center gap-1">
+                              <span>📍</span>
+                              <a href="/sites/${evt.site.id}" class="text-slate-300 hover:text-white underline">
+                                ${evt.site.name}
+                              </a>
+                            </div>
+                          `
+                        : ''}
+
+                      <!-- Officers Badges -->
+                      <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                        ${evt.rsoName
+                          ? html`<span class="px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/60 font-medium">RSO: ${evt.rsoName}</span>`
+                          : ''}
+                        ${evt.lcoName
+                          ? html`<span class="px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/60 font-medium">LCO: ${evt.lcoName}</span>`
+                          : ''}
                       </div>
 
-                      <!-- Weather Notes -->
                       ${evt.weatherNotes
                         ? html`
-                            <div class="mt-3 text-xs text-slate-400 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
-                              <span class="text-slate-300 font-medium">⛅ Weather Notes:</span>
-                              <p class="mt-0.5 line-clamp-2">${evt.weatherNotes}</p>
-                            </div>
+                            <p class="text-xs text-slate-400 mt-3 line-clamp-2 bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/80">
+                              ⛅ ${evt.weatherNotes}
+                            </p>
                           `
                         : ''}
                     </div>
 
-                    <!-- Footer Link -->
-                    <div class="mt-5 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-                      <span class="text-slate-500">ID: <span class="font-mono">${evt.id.slice(0, 8)}</span></span>
+                    <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+                      <a
+                        href="/flights/new?launch_event_id=${evt.id}&launch_site_id=${evt.launchSiteId}"
+                        class="text-slate-400 hover:text-slate-200 transition-colors"
+                      >
+                        + Log Flight
+                      </a>
                       <a
                         href="/events/${evt.id}"
-                        class="text-brand-400 hover:text-brand-300 font-medium inline-flex items-center gap-1 transition-colors"
+                        class="text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1"
                       >
                         View Event Log &rarr;
                       </a>
                     </div>
                   </div>
                 `
-              })}
+              )}
             </div>
           `}
     </div>
@@ -197,6 +182,7 @@ export function eventsListView(
     title: 'Launch Events',
     activeTab: 'events',
     content,
+    user,
   })
 }
 
@@ -206,7 +192,8 @@ export function eventsListView(
 export function eventDetailView(
   event: EventWithSite,
   site: LaunchSite | null,
-  flightsList: Flight[]
+  flightsList: Flight[],
+  user?: any,
 ): HtmlEscapedString | Promise<HtmlEscapedString> {
   const rso = event.rsoName ?? event.rsoUserId
   const lco = event.lcoName ?? event.lcoUserId
@@ -399,6 +386,7 @@ export function eventDetailView(
     title: `${event.name} — Launch Event`,
     activeTab: 'events',
     content,
+    user,
   })
 }
 
@@ -407,7 +395,8 @@ export function eventDetailView(
  */
 export function newEventFormView(
   sites: LaunchSite[],
-  selectedSiteId?: string | null
+  selectedSiteId?: string | null,
+  user?: any,
 ): HtmlEscapedString | Promise<HtmlEscapedString> {
   const content = html`
     <div class="max-w-2xl mx-auto space-y-6">
@@ -440,7 +429,7 @@ export function newEventFormView(
               id="name"
               name="name"
               required
-              placeholder="e.g. Spring High-Power Launch Meet 2026"
+              placeholder="e.g. Woomera HPR National Gathering 2026 or Lake Tyrrell Launch"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
             />
           </div>
@@ -591,5 +580,6 @@ export function newEventFormView(
     title: 'Schedule Launch Event',
     activeTab: 'events',
     content,
+    user,
   })
 }

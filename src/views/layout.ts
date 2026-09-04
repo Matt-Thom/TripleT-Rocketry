@@ -2,12 +2,13 @@
  * Base HTML page layout shell for TripleT-Rocketry.
  *
  * Provides a responsive dark-theme layout using Tailwind CSS Play CDN and HTMX,
- * featuring a desktop top navigation header and a mobile-optimized thumb-friendly
- * "Range Companion" bottom navigation bar.
+ * featuring a desktop top navigation header with active flyer status and pilot
+ * switcher, and a mobile-optimized thumb-friendly "Range Companion" bottom nav.
  */
 
 import { html } from 'hono/html'
 import type { HtmlEscapedString } from 'hono/utils/html'
+import type { ActiveFlyer } from '../db/context'
 
 export type NavTab = 'dashboard' | 'flights' | 'rockets' | 'motors' | 'inventory' | 'sites' | 'events'
 
@@ -15,14 +16,11 @@ export interface PageLayoutOptions {
   title: string
   activeTab: NavTab
   content: HtmlEscapedString | Promise<HtmlEscapedString> | string
+  user?: ActiveFlyer | null
 }
 
-export function pageLayout(options: {
-  title: string
-  activeTab: NavTab
-  content: HtmlEscapedString | Promise<HtmlEscapedString> | string
-}): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { title, activeTab, content } = options
+export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const { title, activeTab, content, user = null } = options
 
   const desktopNavLinkClass = (tab: NavTab) =>
     activeTab === tab
@@ -94,10 +92,41 @@ export function pageLayout(options: {
           </nav>
         </div>
 
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-4">
           <a href="/flights/new" class="inline-flex items-center px-3.5 py-1.5 border border-transparent text-sm font-semibold rounded-md shadow-sm text-slate-950 bg-brand-400 hover:bg-brand-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 focus:ring-offset-slate-900 transition-colors">
-            <span class="mr-1">+</span> Log Flight
+            + Log Flight
           </a>
+
+          ${
+            user
+              ? html`
+                <!-- Active Flyer Status Pill & User Menu -->
+                <div class="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-800 text-sm">
+                  <div class="flex items-center gap-2 py-1 px-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                    <span class="w-6 h-6 rounded-full bg-brand-950 text-brand-400 border border-brand-800/80 flex items-center justify-center text-xs font-bold">
+                      ${user.displayName.charAt(0)}
+                    </span>
+                    <span class="font-medium text-slate-200 text-xs">${user.displayName}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-950 text-brand-300 border border-brand-800/60 font-mono font-semibold" title="Certification Level">
+                      L${user.maxCertLevel}
+                    </span>
+                  </div>
+                  <a href="/login" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition-colors" title="Switch pilot or account">
+                    Switch
+                  </a>
+                  <a href="/logout" class="text-xs text-rose-400 hover:text-rose-300 px-2 py-1 rounded hover:bg-slate-800 transition-colors" title="Log out">
+                    Log Out
+                  </a>
+                </div>
+              `
+              : html`
+                <div class="hidden sm:flex items-center pl-3 border-l border-slate-800">
+                  <a href="/login" class="text-xs font-bold text-brand-400 hover:text-brand-300 px-2.5 py-1 rounded bg-brand-950/60 border border-brand-800/60 transition-colors">
+                    Sign In &rarr;
+                  </a>
+                </div>
+              `
+          }
         </div>
       </div>
     </div>
@@ -109,9 +138,21 @@ export function pageLayout(options: {
       <span class="text-xl">🚀</span>
       <span>TripleT</span>
     </a>
-    <a href="/flights/new" class="text-xs bg-brand-400 text-slate-950 font-bold px-2.5 py-1 rounded shadow hover:bg-brand-300 transition-colors">
-      + Log Flight
-    </a>
+    <div class="flex items-center gap-2">
+      ${
+        user
+          ? html`
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-950 text-brand-300 border border-brand-800/60 font-mono">
+              ${user.displayName.split(' ')[0]} (L${user.maxCertLevel})
+            </span>
+            <a href="/logout" class="text-xs text-rose-400 font-semibold px-1">Exit</a>
+          `
+          : html`<a href="/login" class="text-xs text-brand-400 font-semibold">Sign In</a>`
+      }
+      <a href="/flights/new" class="text-xs bg-brand-400 text-slate-950 font-bold px-2.5 py-1 rounded shadow hover:bg-brand-300 transition-colors">
+        + Log Flight
+      </a>
+    </div>
   </div>
 
   <!-- Main Content Body -->

@@ -29,6 +29,7 @@ export function encodeFormData(
 export async function fetchGet(
   path: string,
   headers: Record<string, string> = {},
+  options: { redirect?: 'follow' | 'error' | 'manual' } = {},
 ): Promise<Response> {
   const url = path.startsWith('http') ? path : `${BASE_URL}${path}`
   return await SELF.fetch(url, {
@@ -37,6 +38,7 @@ export async function fetchGet(
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       ...headers,
     },
+    ...options,
   })
 }
 
@@ -47,6 +49,7 @@ export async function fetchPostForm(
   path: string,
   data: Record<string, string | number | boolean | null | undefined>,
   headers: Record<string, string> = {},
+  options: { redirect?: 'follow' | 'error' | 'manual' } = {},
 ): Promise<Response> {
   const url = path.startsWith('http') ? path : `${BASE_URL}${path}`
   const body = encodeFormData(data)
@@ -57,6 +60,7 @@ export async function fetchPostForm(
       ...headers,
     },
     body,
+    ...options,
   })
 }
 

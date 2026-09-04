@@ -121,10 +121,12 @@ dashboardRouter.get('/', async (c) => {
     recentFlights,
   })
 
+  const user = (c.get as any)('user') || null
   const fullHtml = pageLayout({
     title: 'Dashboard',
     activeTab: 'dashboard',
     content,
+    user,
   })
 
   return c.html(fullHtml, 200, {

@@ -1,10 +1,12 @@
 /**
  * Routes for Launch Sites CRUD operations.
  *
- * GET  /sites       - Lists all launch sites from D1.
- * GET  /sites/new   - Renders new site form.
- * POST /sites       - Inserts new launch_sites row in D1, redirects to /sites/:id.
- * GET  /sites/:id   - Retrieves site and hosted launch events, renders detail view.
+ * GET  /sites          - Lists all launch sites from D1.
+ * GET  /sites/new      - Renders new site form.
+ * POST /sites          - Inserts new launch_sites row in D1, redirects to /sites/:id.
+ * GET  /sites/:id      - Retrieves site and hosted launch events, renders detail view.
+ * GET  /sites/:id/edit - Renders edit site form.
+ * POST /sites/:id/edit - Updates existing launch_sites row in D1.
  */
 
 import { Hono } from 'hono'
@@ -13,7 +15,8 @@ import { eq, desc, asc } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { pageLayout } from '../views/layout'
-import { sitesListView, siteDetailView, newSiteFormView } from '../views/sites'
+import { sitesListView, siteDetailView, newSiteFormView, editSiteFormView } from '../views/sites'
+import { ensureAustralianLaunchSites } from '../db/context'
 
 type Bindings = {
   DB: D1Database
@@ -79,6 +82,8 @@ async function parseSiteInput(c: any) {
 
 async function handleListSites(c: any) {
   const db = drizzle(c.env.DB, { schema })
+  await ensureAustralianLaunchSites(db)
+
   const allSites = await db
     .select()
     .from(schema.launchSites)
@@ -88,11 +93,13 @@ async function handleListSites(c: any) {
     return c.json(allSites)
   }
 
-  return c.html(sitesListView(allSites))
+  const user = c.get('user') || null
+  return c.html(sitesListView(allSites, user))
 }
 
 function handleNewSiteForm(c: any) {
-  return c.html(newSiteFormView())
+  const user = c.get('user') || null
+  return c.html(newSiteFormView(user))
 }
 
 async function handleCreateSite(c: any) {
@@ -102,10 +109,12 @@ async function handleCreateSite(c: any) {
     if (input.isJson) {
       return c.json({ error: 'Site name is required' }, 400)
     }
+    const user = c.get('user') || null
     return c.html(
       pageLayout({
         title: 'Validation Error',
         activeTab: 'sites',
+        user,
         content: html`
           <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
             <h2 class="text-xl font-bold text-rose-400">Missing Required Field</h2>
@@ -150,10 +159,12 @@ async function handleSiteDetail(c: any) {
     if (c.req.header('accept') === 'application/json') {
       return c.json({ error: 'Launch site not found' }, 404)
     }
+    const user = c.get('user') || null
     return c.html(
       pageLayout({
         title: 'Launch Site Not Found',
         activeTab: 'sites',
+        user,
         content: html`
           <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-8 text-center my-12">
             <div class="text-4xl mb-2">🔍</div>
@@ -179,22 +190,127 @@ async function handleSiteDetail(c: any) {
     return c.json({ site, events })
   }
 
-  return c.html(siteDetailView(site, events))
+  const user = c.get('user') || null
+  return c.html(siteDetailView(site, events, user))
+}
+
+async function handleEditSiteForm(c: any) {
+  const id = c.req.param('id')
+  const db = drizzle(c.env.DB, { schema })
+
+  const [site] = await db
+    .select()
+    .from(schema.launchSites)
+    .where(eq(schema.launchSites.id, id))
+
+  if (!site) {
+    if (c.req.header('accept') === 'application/json') {
+      return c.json({ error: 'Launch site not found' }, 404)
+    }
+    const user = c.get('user') || null
+    return c.html(
+      pageLayout({
+        title: 'Launch Site Not Found',
+        activeTab: 'sites',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-8 text-center my-12">
+            <div class="text-4xl mb-2">🔍</div>
+            <h1 class="text-xl font-bold text-white">Site Not Found</h1>
+            <a href="/sites" class="mt-6 inline-flex items-center text-sm text-brand-400">&larr; Back to launch sites</a>
+          </div>
+        `,
+      }),
+      404
+    )
+  }
+
+  const user = c.get('user') || null
+  return c.html(editSiteFormView(site, user))
+}
+
+async function handleUpdateSite(c: any) {
+  const id = c.req.param('id')
+  const input = await parseSiteInput(c)
+
+  if (!input.name) {
+    if (input.isJson) {
+      return c.json({ error: 'Site name is required' }, 400)
+    }
+    const user = c.get('user') || null
+    return c.html(
+      pageLayout({
+        title: 'Validation Error',
+        activeTab: 'sites',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
+            <h2 class="text-xl font-bold text-rose-400">Missing Required Field</h2>
+            <p class="text-sm text-slate-300 mt-2">Launch site name is required.</p>
+            <a href="/sites/${id}/edit" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Edit Form</a>
+          </div>
+        `,
+      }),
+      400
+    )
+  }
+
+  const db = drizzle(c.env.DB, { schema })
+
+  // Check exists
+  const [existing] = await db
+    .select()
+    .from(schema.launchSites)
+    .where(eq(schema.launchSites.id, id))
+
+  if (!existing) {
+    if (input.isJson) {
+      return c.json({ error: 'Launch site not found' }, 404)
+    }
+    return c.redirect('/sites', 302)
+  }
+
+  const [updatedSite] = await db
+    .update(schema.launchSites)
+    .set({
+      name: input.name,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      maxAltitudeAglM: input.maxAltitudeAglM,
+      notes: input.notes,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.launchSites.id, id))
+    .returning()
+
+  if (input.isJson) {
+    return c.json(updatedSite, 200)
+  }
+
+  return c.redirect(`/sites/${id}`, 303)
 }
 
 // ---------------------------------------------------------------------------
-// Route Bindings (Supports both mounted at '/sites' and mounted at root '/')
+// Route Bindings
 // ---------------------------------------------------------------------------
 
-// 1. New form (must precede /:id)
+// 1. New form
 sites.get('/new', handleNewSiteForm)
 sites.get('/sites/new', handleNewSiteForm)
 
-// 2. Specific site detail
+// 2. Edit form & update
+sites.get('/:id/edit', handleEditSiteForm)
+sites.get('/sites/:id/edit', handleEditSiteForm)
+sites.post('/:id/edit', handleUpdateSite)
+sites.post('/sites/:id/edit', handleUpdateSite)
+sites.put('/:id', handleUpdateSite)
+sites.put('/sites/:id', handleUpdateSite)
+
+// 3. Detail
 sites.get('/:id', handleSiteDetail)
 sites.get('/sites/:id', handleSiteDetail)
 
-// 3. List and create
+// 4. List and create
 sites.get('/', handleListSites)
 sites.get('/sites', handleListSites)
 sites.post('/', handleCreateSite)

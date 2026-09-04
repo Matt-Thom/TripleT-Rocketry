@@ -704,16 +704,16 @@ export function recordTransactionFormView(options: {
               <input
                 type="text"
                 name="counterparty_name"
-                placeholder="e.g. John Doe / Apogee Rockets"
+                placeholder="e.g. John Citizen / Australian Rocketry Supplies"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
               />
             </div>
             <div>
-              <label class="block text-xs text-slate-400 mb-1">NAR / TRA Certification # (If Selling HPR Motor)</label>
+              <label class="block text-xs text-slate-400 mb-1">Tripoli Australia (TRA) / ARA Certification # (If Selling HPR Motor)</label>
               <input
                 type="text"
                 name="counterparty_cert_number"
-                placeholder="e.g. NAR 98765 / TRA 12345"
+                placeholder="e.g. TRA-AU-14820 / ARA-5120"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
               />
             </div>
@@ -721,11 +721,11 @@ export function recordTransactionFormView(options: {
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs text-slate-400 mb-1">Explosives Permit / LEUP / License #</label>
+              <label class="block text-xs text-slate-400 mb-1">State Explosives / Propellant License # (Optional)</label>
               <input
                 type="text"
                 name="counterparty_license"
-                placeholder="e.g. ATF LEUP / State License"
+                placeholder="e.g. SafeWork NSW / WorkSafe VIC License"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
               />
             </div>

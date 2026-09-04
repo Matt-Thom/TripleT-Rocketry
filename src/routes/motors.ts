@@ -37,7 +37,7 @@ export const motorsRouter = new Hono<{ Bindings: Bindings; Variables: Variables 
  */
 async function listMotorsHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   const rawImpulseClass = c.req.query('impulse_class') || c.req.query('class') || null
   const impulseClassFilter = rawImpulseClass ? rawImpulseClass.toUpperCase().trim() : null
@@ -101,6 +101,7 @@ async function listMotorsHandler(c: any) {
     title: 'Motor Catalog',
     activeTab: 'motors',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -147,7 +148,7 @@ async function getMotorDetailHandler(c: any) {
     })
   }
 
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   // Query user inventory status for this specific motor
   const [inventoryItem] = await db
@@ -168,6 +169,7 @@ async function getMotorDetailHandler(c: any) {
     title: `${motor.manufacturer} ${motor.model} — Motor Specs`,
     activeTab: 'motors',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {

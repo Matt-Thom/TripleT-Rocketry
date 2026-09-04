@@ -183,14 +183,16 @@ async function handleListEvents(c: any) {
     lcoName: r.event.lcoUserId ? userMap.get(r.event.lcoUserId) ?? r.event.lcoUserId : null,
   }))
 
+  const user = c.get('user') || null
   if (c.req.header('accept') === 'application/json') {
     return c.json(eventsWithSites)
   }
 
-  return c.html(eventsListView(eventsWithSites))
+  return c.html(eventsListView(eventsWithSites, user))
 }
 
 async function handleNewEventForm(c: any) {
+  const user = c.get('user') || null
   const db = drizzle(c.env.DB, { schema })
   const allSites = await db
     .select()
@@ -198,11 +200,13 @@ async function handleNewEventForm(c: any) {
     .orderBy(asc(schema.launchSites.name))
 
   const selectedSiteId = c.req.query('launch_site_id') || null
-  return c.html(newEventFormView(allSites, selectedSiteId))
+  return c.html(newEventFormView(allSites, selectedSiteId, user))
 }
 
 async function handleCreateEvent(c: any) {
   const input = await parseEventInput(c)
+
+  const user = c.get('user') || null
 
   if (!input.name || !input.launchSiteId) {
     const errorMsg = !input.name
@@ -216,6 +220,7 @@ async function handleCreateEvent(c: any) {
       pageLayout({
         title: 'Validation Error',
         activeTab: 'events',
+        user,
         content: html`
           <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
             <h2 class="text-xl font-bold text-rose-400">Missing Required Information</h2>
@@ -244,6 +249,7 @@ async function handleCreateEvent(c: any) {
       pageLayout({
         title: 'Invalid Launch Site',
         activeTab: 'events',
+        user,
         content: html`
           <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
             <h2 class="text-xl font-bold text-rose-400">Invalid Launch Site</h2>
@@ -278,6 +284,7 @@ async function handleCreateEvent(c: any) {
 }
 
 async function handleEventDetail(c: any) {
+  const user = c.get('user') || null
   const id = c.req.param('id')
   const db = drizzle(c.env.DB, { schema })
 
@@ -295,6 +302,7 @@ async function handleEventDetail(c: any) {
       pageLayout({
         title: 'Launch Event Not Found',
         activeTab: 'events',
+        user,
         content: html`
           <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-8 text-center my-12">
             <div class="text-4xl mb-2">🔍</div>
@@ -355,7 +363,7 @@ async function handleEventDetail(c: any) {
     return c.json({ event: eventWithOfficers, site, flights: loggedFlights })
   }
 
-  return c.html(eventDetailView(eventWithOfficers, site, loggedFlights))
+  return c.html(eventDetailView(eventWithOfficers, site, loggedFlights, user))
 }
 
 // ---------------------------------------------------------------------------

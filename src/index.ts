@@ -1,14 +1,18 @@
 /**
  * TripleT-Rocketry Worker — Main router and application entry.
  *
- * Mounts the web UI dashboard and domain sub-routers (flights, rockets, motors,
- * inventory, sites, events), preserves WP0 health and readiness probes, and
+ * Secures the application with authenticated access and multi-user support,
+ * mounts the web UI dashboard and domain sub-routers (auth, flights, rockets, motors,
+ * inventory, sites, events), preserves health and readiness probes, and
  * provides responsive HTML error handling alongside JSON API fallback.
  */
 
 import { Hono } from 'hono'
 import { html } from 'hono/html'
 import { log, type TraceContext } from './logging'
+import type { ActiveFlyer } from './db/context'
+import { authMiddleware } from './middleware/auth'
+import { authRouter } from './routes/auth'
 import { dashboardRouter } from './routes/dashboard'
 import { rocketsRouter } from './routes/rockets'
 import { motorsRouter } from './routes/motors'
@@ -22,10 +26,13 @@ type Bindings = {
   DB: D1Database
   ENVIRONMENT: string
   PROJECT_ID: string
+  AUTH_SECRET?: string
 }
 
 type Variables = {
   trace: TraceContext
+  user?: ActiveFlyer
+  activeFlyer?: ActiveFlyer
 }
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
@@ -42,6 +49,16 @@ app.use('*', async (c, next) => {
   await next()
   c.header('X-Trace-Id', trace.traceId)
 })
+
+/**
+ * Authentication & multi-user session middleware across the application.
+ */
+app.use('*', authMiddleware)
+
+/**
+ * Mount auth routes (login, register, logout, pilot switcher)
+ */
+app.route('/', authRouter)
 
 /**
  * Mount all domain sub-routers
@@ -96,6 +113,7 @@ app.notFound((c) => {
       title: 'Page Not Found',
       activeTab: 'dashboard',
       content: errorView,
+      user: c.get('user') || null,
     })
     return c.html(notFoundPage, 404)
   }
@@ -127,6 +145,7 @@ app.onError((err, c) => {
       title: 'Internal Server Error',
       activeTab: 'dashboard',
       content: errorView,
+      user: c.get('user') || null,
     })
     return c.html(errorPage, 500)
   }
