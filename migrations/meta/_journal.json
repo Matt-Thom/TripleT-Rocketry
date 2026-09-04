@@ -8,6 +8,13 @@
       "when": 1788439680981,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788494452394,
+      "tag": "0001_bent_namora",
+      "breakpoints": true
     }
   ]
 }

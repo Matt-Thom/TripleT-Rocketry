@@ -1,16 +1,22 @@
 /**
- * TripleT-Rocketry Worker — WP0 surface: /health and /ready.
+ * TripleT-Rocketry Worker — Main router and application entry.
  *
- * Port of the FastAPI application factory (previously app/main.py) onto
- * Cloudflare Workers + D1. Behaviour is intended to be observationally
- * identical: same routes, same bodies, same status codes, same X-Trace-Id
- * propagation.
- *
- * See: wiki/concepts/phase1-implementation-plan.md
+ * Mounts the web UI dashboard and domain sub-routers (flights, rockets, motors,
+ * inventory, sites, events), preserves WP0 health and readiness probes, and
+ * provides responsive HTML error handling alongside JSON API fallback.
  */
 
 import { Hono } from 'hono'
+import { html } from 'hono/html'
 import { log, type TraceContext } from './logging'
+import { dashboardRouter } from './routes/dashboard'
+import { rocketsRouter } from './routes/rockets'
+import { motorsRouter } from './routes/motors'
+import { inventoryRouter } from './routes/inventory'
+import { sitesRouter } from './routes/sites'
+import { eventsRouter } from './routes/events'
+import { flightsRouter } from './routes/flights'
+import { pageLayout } from './views/layout'
 
 type Bindings = {
   DB: D1Database
@@ -26,9 +32,6 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 /**
  * Bind X-Trace-Id and project_id for every request.
- *
- * An inbound X-Trace-Id is honoured so a trace survives across services; the
- * header lookup is case-insensitive because the Headers API normalises names.
  */
 app.use('*', async (c, next) => {
   const trace: TraceContext = {
@@ -41,11 +44,18 @@ app.use('*', async (c, next) => {
 })
 
 /**
+ * Mount all domain sub-routers
+ */
+app.route('/', dashboardRouter)
+app.route('/rockets', rocketsRouter)
+app.route('/motors', motorsRouter)
+app.route('/inventory', inventoryRouter)
+app.route('/sites', sitesRouter)
+app.route('/events', eventsRouter)
+app.route('/flights', flightsRouter)
+
+/**
  * Liveness probe. Does not touch the database.
- *
- * Deliberately returns no configuration detail: this endpoint is
- * unauthenticated, and project_id / environment are already carried on every
- * log line via the trace context.
  */
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
@@ -62,10 +72,64 @@ app.get('/ready', async (c) => {
   }
 })
 
-app.notFound((c) => c.json({ detail: 'Not Found' }, 404))
+/**
+ * Content-negotiating 404 handler
+ */
+app.notFound((c) => {
+  const acceptsHtml = c.req.header('accept')?.includes('text/html')
+  if (acceptsHtml) {
+    const errorView = html`
+      <div class="py-16 text-center">
+        <span class="text-6xl mb-4 block">🛸</span>
+        <h1 class="text-3xl font-extrabold text-white">404 — Page Not Found</h1>
+        <p class="mt-2 text-slate-400 max-w-md mx-auto">
+          The trajectory you requested is outside range airspace.
+        </p>
+        <div class="mt-6">
+          <a href="/" class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors">
+            Return to Dashboard
+          </a>
+        </div>
+      </div>
+    `
+    const notFoundPage = pageLayout({
+      title: 'Page Not Found',
+      activeTab: 'dashboard',
+      content: errorView,
+    })
+    return c.html(notFoundPage, 404)
+  }
+  return c.json({ detail: 'Not Found' }, 404)
+})
 
+/**
+ * Content-negotiating 500 handler
+ */
 app.onError((err, c) => {
   log('error', 'unhandled_exception', c.get('trace'), { error: String(err) })
+  const acceptsHtml = c.req.header('accept')?.includes('text/html')
+  if (acceptsHtml) {
+    const errorView = html`
+      <div class="py-16 text-center">
+        <span class="text-6xl mb-4 block">⚠️</span>
+        <h1 class="text-3xl font-extrabold text-white">500 — System Anomaly</h1>
+        <p class="mt-2 text-slate-400 max-w-md mx-auto">
+          An unexpected anomaly occurred on the launch range.
+        </p>
+        <div class="mt-6">
+          <a href="/" class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors">
+            Return to Dashboard
+          </a>
+        </div>
+      </div>
+    `
+    const errorPage = pageLayout({
+      title: 'Internal Server Error',
+      activeTab: 'dashboard',
+      content: errorView,
+    })
+    return c.html(errorPage, 500)
+  }
   return c.json({ detail: 'Internal Server Error' }, 500)
 })
 

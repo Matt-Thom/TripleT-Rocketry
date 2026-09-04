@@ -14,7 +14,9 @@ import * as schema from '../src/db/schema'
 
 const TABLES = [
   'certifications',
+  'components',
   'flights',
+  'inventory_transactions',
   'launch_events',
   'launch_sites',
   'motor_inventories',
@@ -29,6 +31,8 @@ const db = () => drizzle(env.DB, { schema })
 /** Delete in FK-dependency order so each test starts from an empty graph. */
 async function truncate() {
   for (const table of [
+    'inventory_transactions',
+    'components',
     'flights',
     'launch_events',
     'motor_inventories',

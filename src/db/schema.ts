@@ -50,6 +50,22 @@ export const FLIGHT_OUTCOME = [
   'tree', 'powerline', 'lost', 'other',
 ] as const
 
+export const COMPONENT_CATEGORY = [
+  'motor', 'casing', 'recovery', 'avionics',
+  'pyrotechnic', 'airframe', 'hardware', 'payload', 'other',
+] as const
+
+export const COMPONENT_CONDITION = [
+  'new', 'good', 'fair', 'damaged', 'quarantined', 'retired',
+] as const
+
+export const TRANSACTION_TYPE = [
+  'purchased', 'received', 'used', 'sold',
+  'transferred_in', 'transferred_out', 'disposed', 'destroyed',
+  'lost', 'stolen', 'quarantined', 'returned',
+  'loaned_out', 'borrowed', 'audit_adjustment',
+] as const
+
 // --- Shared column builders ------------------------------------------------
 
 const uuidPk = () =>
@@ -235,13 +251,60 @@ export const motorInventories = sqliteTable(
       .references(() => motors.id),
     quantityOnHand: integer('quantity_on_hand').notNull().default(0),
     expendedCount: integer('expended_count').notNull().default(0),
+    soldCount: integer('sold_count').notNull().default(0),
+    disposedCount: integer('disposed_count').notNull().default(0),
     acquiredOn: text('acquired_on'),
+    purchasedOn: text('purchased_on'),
+    receivedOn: text('received_on'),
+    batchLotNumber: text('batch_lot_number'),
+    serialNumber: text('serial_number'),
+    storageLocation: text('storage_location'),
     notes: text('notes'),
     ...auditColumns,
   },
   (t) => [
     index('ix_motor_inventories_user_id').on(t.userId),
     index('ix_motor_inventories_motor_id').on(t.motorId),
+  ],
+)
+
+export const components = sqliteTable(
+  'components',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    category: text('category', { enum: COMPONENT_CATEGORY }).notNull(),
+    motorId: text('motor_id').references(() => motors.id),
+    manufacturer: text('manufacturer'),
+    partNumber: text('part_number'),
+    serialNumber: text('serial_number'),
+    lotNumber: text('lot_number'),
+    quantityOnHand: integer('quantity_on_hand').notNull().default(0),
+    quantityAllocated: integer('quantity_allocated').notNull().default(0),
+    quantityExpended: integer('quantity_expended').notNull().default(0),
+    quantityDisposed: integer('quantity_disposed').notNull().default(0),
+    unit: text('unit').notNull().default('ea'),
+    condition: text('condition', { enum: COMPONENT_CONDITION }).notNull().default('new'),
+    storageLocation: text('storage_location'),
+    hazardClass: text('hazard_class'),
+    propellantMassG: real('propellant_mass_g'),
+    acquiredOn: text('acquired_on'),
+    purchasedOn: text('purchased_on'),
+    receivedOn: text('received_on'),
+    costCents: integer('cost_cents'),
+    vendor: text('vendor'),
+    expirationDate: text('expiration_date'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_components_user_id').on(t.userId),
+    index('ix_components_category').on(t.category),
+    enumCheck('ck_components_category', t.category, COMPONENT_CATEGORY),
+    enumCheck('ck_components_condition', t.condition, COMPONENT_CONDITION),
   ],
 )
 
@@ -316,3 +379,40 @@ export const flights = sqliteTable(
     enumCheck('ck_flights_outcome', t.outcome, FLIGHT_OUTCOME),
   ],
 )
+
+export const inventoryTransactions = sqliteTable(
+  'inventory_transactions',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    motorInventoryId: text('motor_inventory_id').references(() => motorInventories.id),
+    componentId: text('component_id').references(() => components.id),
+    transactionType: text('transaction_type', { enum: TRANSACTION_TYPE }).notNull(),
+    quantity: integer('quantity').notNull().default(1),
+    transactionDate: text('transaction_date').notNull(),
+    counterpartyName: text('counterparty_name'),
+    counterpartyCertNumber: text('counterparty_cert_number'),
+    counterpartyLicense: text('counterparty_license'),
+    counterpartyContact: text('counterparty_contact'),
+    referenceId: text('reference_id'),
+    flightId: text('flight_id').references(() => flights.id),
+    batchLotNumber: text('batch_lot_number'),
+    serialNumbers: text('serial_numbers'),
+    storageLocation: text('storage_location'),
+    unitCost: real('unit_cost'),
+    witnessName: text('witness_name'),
+    complianceNotes: text('compliance_notes'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_inventory_transactions_user_id').on(t.userId),
+    index('ix_inventory_transactions_motor_inv_id').on(t.motorInventoryId),
+    index('ix_inventory_transactions_component_id').on(t.componentId),
+    index('ix_inventory_transactions_type').on(t.transactionType),
+    enumCheck('ck_inventory_transactions_type', t.transactionType, TRANSACTION_TYPE),
+  ],
+)
+
