@@ -15,6 +15,8 @@
  * 4. Chain-of-custody discrepancy, loss, theft, and quarantine alerts.
  */
 
+export type RegulatoryRegion = 'SA' | 'US'
+
 export interface TransferComplianceCheckInput {
   impulseClass?: string | null
   propellantType?: string | null
@@ -23,6 +25,7 @@ export interface TransferComplianceCheckInput {
   counterpartyCertNumber?: string | null
   counterpartyCertLevel?: number | null
   counterpartyLicense?: string | null
+  region?: RegulatoryRegion | null
 }
 
 export interface TransferComplianceResult {
@@ -45,7 +48,7 @@ export function getRequiredCertLevelForImpulse(impulseClass?: string | null): nu
 }
 
 /**
- * Checks if a motor impulse class falls under High Power Rocketry (NFPA 1127).
+ * Checks if a motor impulse class falls under High Power Rocketry (NFPA 1127 / CASA CASR Part 101).
  */
 export function isHighPowerImpulse(impulseClass?: string | null): boolean {
   return getRequiredCertLevelForImpulse(impulseClass) > 0
@@ -56,7 +59,9 @@ export function isHighPowerImpulse(impulseClass?: string | null): boolean {
  */
 export function evaluateTransferCompliance(
   input: TransferComplianceCheckInput,
+  defaultRegion: RegulatoryRegion = 'SA',
 ): TransferComplianceResult {
+  const region = input.region || defaultRegion
   const warnings: string[] = []
   const reqLevel = getRequiredCertLevelForImpulse(input.impulseClass)
   const isHpr = reqLevel > 0
@@ -87,9 +92,15 @@ export function evaluateTransferCompliance(
 
       // Propellant licensing notice for APCP / regulated explosives
       if (input.propellantType === 'apcp' && !input.counterpartyLicense) {
-        warnings.push(
-          'Compliance Notice: APCP solid propellant motor transfer should document recipient regulatory permit or LEUP/storage exemption where required by state/federal law.',
-        )
+        if (region === 'SA') {
+          warnings.push(
+            'Compliance Notice: Rocket motor transfers in South Australia require recording recipient SafeWork SA Explosives Permit / Licence or TRA Australia / ARA certification.',
+          )
+        } else {
+          warnings.push(
+            'Compliance Notice: APCP solid propellant motor transfer should document recipient regulatory permit or LEUP/storage exemption where required by state/federal law.',
+          )
+        }
       }
     }
   }
@@ -129,13 +140,15 @@ export interface InventoryItemForStorage {
 /**
  * Calculates total propellant storage across inventory and audits magazine limits.
  *
- * Typical default recreational/hobby safe storage guideline is 50 lbs (~22,680g)
- * without a formal explosive magazine permit.
+ * Default regulatory region is South Australia ('SA') with an unlicensed propellant
+ * storage limit of 3.0 kg (3,000g). In 'US' region, standard storage limit is 50 lbs (~22,680g).
  */
 export function calculateStorageSummary(
   items: InventoryItemForStorage[],
-  magazineLimitG = 22680,
+  magazineLimitG = 3000,
+  region: RegulatoryRegion = 'SA',
 ): StorageSummary {
+  const effectiveRegion = magazineLimitG === 22680 ? 'US' : region
   let totalPropellantMassG = 0
   let highPowerMotorCount = 0
   let totalUnitsOnHand = 0
@@ -177,9 +190,15 @@ export function calculateStorageSummary(
   const totalLbs = totalPropellantMassG / 453.592
 
   if (totalPropellantMassG > magazineLimitG) {
-    warnings.push(
-      `Magazine Storage Limit Exceeded: Total Net Propellant Weight is ${totalLbs.toFixed(1)} lbs (${totalKg.toFixed(1)} kg), which exceeds the standard storage limit of ${(magazineLimitG / 453.592).toFixed(1)} lbs. Ensure approved Type 4 magazine compliance.`,
-    )
+    if (effectiveRegion === 'US') {
+      warnings.push(
+        `Magazine Storage Limit Exceeded: Total Net Propellant Weight is ${totalLbs.toFixed(1)} lbs (${totalKg.toFixed(1)} kg), which exceeds the standard storage limit of ${(magazineLimitG / 453.592).toFixed(1)} lbs. Ensure approved Type 4 magazine compliance.`,
+      )
+    } else {
+      warnings.push(
+        `SafeWork SA Storage Limit Exceeded: Total Net Propellant/Explosive Mass is ${totalKg.toFixed(2)} kg (${totalPropellantMassG.toFixed(0)}g), exceeding the South Australian unlicensed limit of ${(magazineLimitG / 1000).toFixed(1)} kg. SafeWork SA Licence to Store Explosives on Premises required.`,
+      )
+    }
   }
 
   if (quarantinedCount > 0) {

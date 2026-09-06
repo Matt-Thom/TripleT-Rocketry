@@ -10,6 +10,7 @@
 
 import { html } from 'hono/html'
 import type { HtmlEscapedString } from 'hono/utils/html'
+import { formatRecoveryType } from './rockets'
 
 export interface FlightListItem {
   id: string
@@ -67,6 +68,7 @@ export interface FlightDetailOptions {
     stabilityCalibers?: number | null
     recoveryType?: string | null
     parachuteSizeMm?: number | null
+    drogueParachuteSizeMm?: number | null
     motorMountDiameterMm?: number | null
   } | null
   rocket?: {
@@ -110,6 +112,8 @@ export interface FlightDetailOptions {
     displayName?: string | null
     email?: string | null
   } | null
+  units?: string | null
+  unitSystem?: 'metric' | 'imperial' | string | null
 }
 
 export interface PreflightFormProps {
@@ -267,10 +271,19 @@ export function preflightWarningFragment(
 /**
  * Flight Logbook List View (GET /flights).
  */
-export function flightsListView(flights: FlightListItem[]): HtmlEscapedString | Promise<HtmlEscapedString> {
+export function flightsListView(
+  flights: FlightListItem[],
+  units?: string | { units?: string; unitSystem?: 'metric' | 'imperial' } | null,
+  unitSystemArg?: 'metric' | 'imperial' | null,
+): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const isImperial =
+    (typeof units === 'object' && units !== null
+      ? units.unitSystem === 'imperial' || units.units === 'ft' || units.units === 'feet'
+      : units === 'ft' || units === 'feet' || unitSystemArg === 'imperial') || false
+
   return html`
     <div class="space-y-6">
-      <!-- Header with Action -->
+      <!-- Header with Action and Unit Toggle -->
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-800 gap-4">
         <div>
           <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
@@ -280,7 +293,26 @@ export function flightsListView(flights: FlightListItem[]): HtmlEscapedString | 
             Recorded flight telemetry, performance logs, and preflight safety records.
           </p>
         </div>
-        <div>
+        <div class="flex items-center gap-3">
+          <!-- Unit Toggle (Meters / Feet) -->
+          <div class="inline-flex items-center rounded-lg bg-slate-900 p-1 border border-slate-700" role="group" aria-label="Units toggle">
+            <span class="text-xs text-slate-400 px-2 font-medium">Units:</span>
+            <a
+              href="/flights?units=m"
+              id="units-m"
+              class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${!isImperial ? 'bg-brand-400 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}"
+            >
+              Meters (m)
+            </a>
+            <a
+              href="/flights?units=ft"
+              id="units-ft"
+              class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${isImperial ? 'bg-brand-400 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}"
+            >
+              Feet (ft)
+            </a>
+          </div>
+
           <a
             href="/flights/new"
             class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-md transition-colors"
@@ -353,9 +385,11 @@ export function flightsListView(flights: FlightListItem[]): HtmlEscapedString | 
                             ${motorName}
                           </span>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-slate-300 font-mono">
+                        <td class="px-6 py-4 whitespace-nowrap text-slate-300 font-mono" data-m="${f.altitudeAglM ?? ''}" data-altitude="${f.altitudeAglM ?? ''}">
                           ${f.altitudeAglM != null
-                            ? html`<span class="font-bold text-white">${f.altitudeAglM.toLocaleString()}</span> m`
+                            ? (isImperial
+                                ? html`<span class="font-bold text-white">${Math.round(f.altitudeAglM * 3.28084).toLocaleString()}</span> ft`
+                                : html`<span class="font-bold text-white">${f.altitudeAglM.toLocaleString()}</span> m`)
                             : '—'}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-slate-300 font-mono">
@@ -403,7 +437,8 @@ export function flightsListView(flights: FlightListItem[]): HtmlEscapedString | 
  * Detailed Flight Log View (GET /flights/:id).
  */
 export function flightDetailView(options: FlightDetailOptions): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { flight, config, rocket, motor, site, event, flyer } = options
+  const { flight, config, rocket, motor, site, event, flyer, units, unitSystem } = options
+  const isImperial = unitSystem === 'imperial' || units === 'ft' || units === 'feet'
   const warnings = flight.softGateWarnings || []
   const hasWarnings = warnings.length > 0 || Boolean(flight.proceededDespiteWarnings)
   const flightTitle = rocket?.name
@@ -431,6 +466,25 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
           </p>
         </div>
         <div class="flex items-center gap-3">
+          <!-- Unit Toggle (Meters / Feet) -->
+          <div class="inline-flex items-center rounded-lg bg-slate-900 p-1 border border-slate-700" role="group" aria-label="Units toggle">
+            <span class="text-xs text-slate-400 px-2 font-medium">Units:</span>
+            <a
+              href="/flights/${flight.id}?units=m"
+              id="units-detail-m"
+              class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${!isImperial ? 'bg-brand-400 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}"
+            >
+              Meters (m)
+            </a>
+            <a
+              href="/flights/${flight.id}?units=ft"
+              id="units-detail-ft"
+              class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${isImperial ? 'bg-brand-400 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}"
+            >
+              Feet (ft)
+            </a>
+          </div>
+
           <a
             href="/flights/new"
             class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-md transition-colors"
@@ -490,16 +544,24 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
             <span>📊 Telemetry & Performance</span>
           </h2>
           <dl class="grid grid-cols-2 gap-4 text-sm">
-            <div>
+            <div data-m="${flight.altitudeAglM ?? ''}" data-altitude="${flight.altitudeAglM ?? ''}">
               <dt class="text-xs text-slate-400">Peak Altitude (AGL)</dt>
               <dd class="mt-1 font-mono text-lg font-bold text-white">
-                ${flight.altitudeAglM != null ? `${flight.altitudeAglM.toLocaleString()} m` : '—'}
+                ${flight.altitudeAglM != null
+                  ? (isImperial
+                      ? `${Math.round(flight.altitudeAglM * 3.28084).toLocaleString()} ft`
+                      : `${flight.altitudeAglM.toLocaleString()} m`)
+                  : '—'}
               </dd>
             </div>
-            <div>
+            <div data-m="${flight.altitudeMslM ?? ''}" data-altitude="${flight.altitudeMslM ?? ''}">
               <dt class="text-xs text-slate-400">Peak Altitude (MSL)</dt>
               <dd class="mt-1 font-mono text-lg font-bold text-white">
-                ${flight.altitudeMslM != null ? `${flight.altitudeMslM.toLocaleString()} m` : '—'}
+                ${flight.altitudeMslM != null
+                  ? (isImperial
+                      ? `${Math.round(flight.altitudeMslM * 3.28084).toLocaleString()} ft`
+                      : `${flight.altitudeMslM.toLocaleString()} m`)
+                  : '—'}
               </dd>
             </div>
             <div>
@@ -560,18 +622,32 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
                 ${config?.stabilityCalibers != null ? `${config.stabilityCalibers.toFixed(2)} cal` : '—'}
               </dd>
             </div>
-            <div>
+            <div data-cg="${config?.cgMm ?? ''}" data-cp="${config?.cpMm ?? ''}">
               <dt class="text-xs text-slate-400">CG / CP Position</dt>
               <dd class="mt-1 font-mono text-slate-200">
-                ${config?.cgMm != null ? `${config.cgMm}mm` : '—'} /
-                ${config?.cpMm != null ? `${config.cpMm}mm` : '—'}
+                ${isImperial
+                  ? (config?.cgMm != null && config?.cpMm != null
+                      ? `${(config.cgMm / 304.8).toFixed(1)} ft / ${(config.cpMm / 304.8).toFixed(1)} ft`
+                      : (config?.cgMm != null ? `${(config.cgMm / 304.8).toFixed(1)} ft` : '—'))
+                  : (config?.cgMm != null && config?.cpMm != null
+                      ? `${config.cgMm}mm / ${config.cpMm}mm`
+                      : (config?.cgMm != null ? `${config.cgMm}mm` : '—'))}
               </dd>
+              <p class="text-[10px] text-slate-400 mt-0.5">Reference datum: Distance from Nose Cone Tip</p>
             </div>
             <div>
               <dt class="text-xs text-slate-400">Recovery System</dt>
               <dd class="mt-1 text-slate-200">
-                ${config?.recoveryType || 'Parachute'}
-                ${config?.parachuteSizeMm ? ` (${config.parachuteSizeMm}mm)` : ''}
+                ${formatRecoveryType(config?.recoveryType)}
+                ${config?.recoveryType === 'dual_deploy'
+                  ? (isImperial
+                      ? html` (Main: ${config?.parachuteSizeMm != null ? `${(config.parachuteSizeMm / 304.8).toFixed(1)} ft` : '—'}${config?.drogueParachuteSizeMm != null ? `, Drogue: ${(config.drogueParachuteSizeMm / 304.8).toFixed(1)} ft` : ''})`
+                      : html` (Main: ${config?.parachuteSizeMm != null ? `${config.parachuteSizeMm}mm` : '—'}${config?.drogueParachuteSizeMm != null ? `, Drogue: ${config.drogueParachuteSizeMm}mm` : ''})`)
+                  : (config?.parachuteSizeMm != null
+                      ? (isImperial
+                          ? ` (${(config.parachuteSizeMm / 304.8).toFixed(1)} ft)`
+                          : ` (${config.parachuteSizeMm}mm)`)
+                      : '')}
               </dd>
             </div>
           </dl>
@@ -635,10 +711,14 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
                 ${site?.name || 'Local Field'}
               </dd>
             </div>
-            <div>
+            <div data-m="${site?.maxAltitudeAglM ?? ''}" data-altitude="${site?.maxAltitudeAglM ?? ''}">
               <dt class="text-xs text-slate-400">Waiver Altitude Ceiling</dt>
               <dd class="mt-1 font-mono font-bold text-white">
-                ${site?.maxAltitudeAglM != null ? `${site.maxAltitudeAglM.toLocaleString()} m AGL` : 'Unlimited'}
+                ${site?.maxAltitudeAglM != null
+                  ? (isImperial
+                      ? `${Math.round(site.maxAltitudeAglM * 3.28084).toLocaleString()} ft`
+                      : `${site.maxAltitudeAglM.toLocaleString()} m AGL`)
+                  : 'Unlimited'}
               </dd>
             </div>
             <div>
@@ -667,7 +747,11 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
             <div>
               <dt class="text-xs text-slate-400">Visibility / Cloud Ceiling</dt>
               <dd class="mt-1 font-mono text-slate-200">
-                ${flight.ceilingM != null ? `${flight.ceilingM}m ceiling` : 'Clear skies'}
+                ${flight.ceilingM != null
+                  ? (isImperial
+                      ? `${Math.round(flight.ceilingM * 3.28084).toLocaleString()} ft ceiling`
+                      : `${flight.ceilingM}m ceiling`)
+                  : 'Clear skies'}
               </dd>
             </div>
           </dl>

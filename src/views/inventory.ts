@@ -37,6 +37,7 @@ export interface InventoryPageData {
   storageSummary: StorageSummary
   activeFilter?: string
   catalogMotors?: Partial<Motor>[]
+  region?: 'SA' | 'US'
 }
 
 /**
@@ -91,7 +92,8 @@ export function getConditionBadgeClasses(condition: string): { label: string; ba
  * Main Inventory & Compliance Hub View.
  */
 export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { motors, components, transactions, storageSummary, activeFilter = 'all', catalogMotors = [] } = data
+  const { motors, components, transactions, storageSummary, activeFilter = 'all', catalogMotors = [], region = 'SA' } = data
+  const isSA = region === 'SA'
 
   const filterTabClass = (f: string) =>
     activeFilter === f
@@ -146,7 +148,9 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
             </h2>
           </div>
           <div class="text-xs text-slate-400">
-            Guideline: NFPA 1122 / 1127 & State Explosives Regulations
+            ${isSA
+              ? 'Guideline: SafeWork SA (Explosives Act) & CASA CASR Part 101'
+              : 'Guideline: NFPA 1122 / 1127 & State Explosives Regulations'}
           </div>
         </div>
 
@@ -154,10 +158,15 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
           <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
             <span class="text-xs font-semibold uppercase text-slate-400">Net Propellant Mass (NEW)</span>
             <p class="text-2xl font-bold font-mono text-emerald-400 mt-1">
-              ${storageSummary.totalPropellantMassG.toFixed(1)} <span class="text-xs text-slate-400 font-sans font-normal">g</span>
+              ${isSA
+                ? `${storageSummary.totalPropellantMassKg.toFixed(2)} `
+                : `${storageSummary.totalPropellantMassG.toFixed(1)} `}
+              <span class="text-xs text-slate-400 font-sans font-normal">${isSA ? 'kg' : 'g'}</span>
             </p>
             <span class="text-xs text-slate-500">
-              ${storageSummary.totalPropellantMassLbs.toFixed(2)} lbs (${storageSummary.totalPropellantMassKg.toFixed(2)} kg)
+              ${isSA
+                ? `${storageSummary.totalPropellantMassG.toFixed(0)} g (${storageSummary.totalPropellantMassLbs.toFixed(2)} lbs)`
+                : `${storageSummary.totalPropellantMassLbs.toFixed(2)} lbs (${storageSummary.totalPropellantMassKg.toFixed(2)} kg)`}
             </span>
           </div>
 
@@ -166,7 +175,11 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
             <p class="text-2xl font-bold font-mono text-amber-400 mt-1">
               ${storageSummary.highPowerMotorCount} <span class="text-xs text-slate-400 font-sans font-normal">units</span>
             </p>
-            <span class="text-xs text-slate-500">Requires NAR/TRA Level 1-3 & LEUP</span>
+            <span class="text-xs text-slate-500">
+              ${isSA
+                ? 'Requires TRA Australia / ARA Level 1-3 & SafeWork SA Permit'
+                : 'Requires NAR/TRA Level 1-3 & LEUP'}
+            </span>
           </div>
 
           <div class="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80">
@@ -835,8 +848,10 @@ export function addComponentFormView(): HtmlEscapedString | Promise<HtmlEscapedS
             <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Category *</label>
             <select
               name="category"
+              id="component-category"
               required
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+              onchange="toggleHazardousFields()"
             >
               <option value="casing" selected>🔩 Motor Casing / Hardware</option>
               <option value="recovery">🪂 Recovery (Parachute / Streamer / Cord)</option>
@@ -917,7 +932,7 @@ export function addComponentFormView(): HtmlEscapedString | Promise<HtmlEscapedS
         </div>
 
         <!-- Pyrotechnic & Explosives Regulatory Fields -->
-        <div class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4">
+        <div id="hazardous-specs-section" class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4 hidden">
           <div class="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
             <span>⚠️</span>
             <span>Pyrotechnic & Hazardous Material Specs (If Applicable)</span>
@@ -980,6 +995,230 @@ export function addComponentFormView(): HtmlEscapedString | Promise<HtmlEscapedS
           </button>
         </div>
       </form>
+
+      <script>
+        function toggleHazardousFields() {
+          var select = document.getElementById('component-category');
+          var section = document.getElementById('hazardous-specs-section');
+          if (!select || !section) return;
+          if (select.value === 'pyrotechnic' || select.value === 'motor') {
+            section.classList.remove('hidden');
+          } else {
+            section.classList.add('hidden');
+          }
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', toggleHazardousFields);
+        } else {
+          toggleHazardousFields();
+        }
+      </script>
+    </div>
+  `
+}
+
+/**
+ * Edit Existing Component View.
+ */
+export function editComponentFormView(component: Component): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const isHazardous = component.category === 'pyrotechnic' || component.category === 'motor'
+
+  return html`
+    <div class="max-w-2xl mx-auto space-y-6">
+      <div class="border-b border-slate-800 pb-3">
+        <a href="/inventory" class="text-xs text-brand-400 hover:underline">← Back to Inventory</a>
+        <h1 class="text-2xl font-bold text-white mt-2 flex items-center gap-2">
+          <span>🛠️</span>
+          <span>Edit Hardware / Rocketry Component</span>
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">
+          Update specifications, condition, stock levels, and hazardous material ratings.
+        </p>
+      </div>
+
+      <form method="POST" action="/inventory/components/${component.id}" class="space-y-5 bg-slate-900/60 p-6 rounded-2xl border border-slate-800">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Component Name *</label>
+            <input
+              type="text"
+              name="name"
+              required
+              value="${component.name}"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Category *</label>
+            <select
+              name="category"
+              id="component-category"
+              required
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+              onchange="toggleHazardousFields()"
+            >
+              <option value="casing" ${component.category === 'casing' ? 'selected' : ''}>🔩 Motor Casing / Hardware</option>
+              <option value="recovery" ${component.category === 'recovery' ? 'selected' : ''}>🪂 Recovery (Parachute / Streamer / Cord)</option>
+              <option value="avionics" ${component.category === 'avionics' ? 'selected' : ''}>📟 Avionics (Altimeter / Computer / GPS)</option>
+              <option value="pyrotechnic" ${component.category === 'pyrotechnic' ? 'selected' : ''}>💥 Pyrotechnic / Igniter / Ejection Charge</option>
+              <option value="airframe" ${component.category === 'airframe' ? 'selected' : ''}>🚀 Airframe / Tube / Nose Cone / Fin</option>
+              <option value="hardware" ${component.category === 'hardware' ? 'selected' : ''}>🔧 Rigging / Hardware / Lugs</option>
+              <option value="payload" ${component.category === 'payload' ? 'selected' : ''}>📷 Payload / Sensor Package</option>
+              <option value="other" ${component.category === 'other' ? 'selected' : ''}>📦 Other Component</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Manufacturer</label>
+            <input
+              type="text"
+              name="manufacturer"
+              value="${component.manufacturer || ''}"
+              placeholder="e.g. AeroTech / Top Flight"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Part / Model #</label>
+            <input
+              type="text"
+              name="part_number"
+              value="${component.partNumber || ''}"
+              placeholder="e.g. RMS-29/180"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">Serial Number</label>
+            <input
+              type="text"
+              name="serial_number"
+              value="${component.serialNumber || ''}"
+              placeholder="e.g. SN-4912"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Quantity on Hand *</label>
+            <input
+              type="number"
+              name="quantity_on_hand"
+              value="${component.quantityOnHand}"
+              min="0"
+              required
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1.5">Condition</label>
+            <select
+              name="condition"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            >
+              <option value="new" ${component.condition === 'new' ? 'selected' : ''}>New</option>
+              <option value="good" ${component.condition === 'good' ? 'selected' : ''}>Good</option>
+              <option value="fair" ${component.condition === 'fair' ? 'selected' : ''}>Fair</option>
+              <option value="damaged" ${component.condition === 'damaged' ? 'selected' : ''}>Damaged</option>
+              <option value="quarantined" ${component.condition === 'quarantined' ? 'selected' : ''}>Quarantined</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1.5">Storage Location</label>
+            <input
+              type="text"
+              name="storage_location"
+              value="${component.storageLocation || ''}"
+              placeholder="e.g. Workshop Bin 3 / Magazine"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+        </div>
+
+        <!-- Pyrotechnic & Explosives Regulatory Fields -->
+        <div id="hazardous-specs-section" class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4 ${isHazardous ? '' : 'hidden'}">
+          <div class="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+            <span>⚠️</span>
+            <span>Pyrotechnic & Hazardous Material Specs (If Applicable)</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Propellant / NEW Mass (g)</label>
+              <input
+                type="number"
+                step="0.1"
+                name="propellant_mass_g"
+                value="${component.propellantMassG !== null && component.propellantMassG !== undefined ? component.propellantMassG : ''}"
+                placeholder="e.g. 12.5"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Hazard Class</label>
+              <input
+                type="text"
+                name="hazard_class"
+                value="${component.hazardClass || ''}"
+                placeholder="e.g. 1.4S / 1.4C"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Expiration Date</label>
+              <input
+                type="date"
+                name="expiration_date"
+                value="${component.expirationDate || ''}"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Notes -->
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Notes / Acquisition Info</label>
+          <textarea
+            name="notes"
+            rows="2"
+            placeholder="Vendor, purchase price, specifications, maintenance notes..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+          >${component.notes || ''}</textarea>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <a
+            href="/inventory"
+            class="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="px-5 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm"
+          >
+            Update Component
+          </button>
+        </div>
+      </form>
+
+      <script>
+        function toggleHazardousFields() {
+          var select = document.getElementById('component-category');
+          var section = document.getElementById('hazardous-specs-section');
+          if (!select || !section) return;
+          if (select.value === 'pyrotechnic' || select.value === 'motor') {
+            section.classList.remove('hidden');
+          } else {
+            section.classList.add('hidden');
+          }
+        }
+      </script>
     </div>
   `
 }

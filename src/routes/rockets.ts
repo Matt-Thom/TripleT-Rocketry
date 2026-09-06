@@ -232,28 +232,49 @@ rocketsRouter.post('/', async (c) => {
       : null
 
   const parachuteSizeMm = parseOptionalNumber(body.parachute_size_mm ?? body.parachuteSizeMm)
+  const drogueParachuteSizeMm =
+    recoveryType === 'dual_deploy'
+      ? parseOptionalNumber(body.drogue_parachute_size_mm ?? body.drogueParachuteSizeMm)
+      : null
   const motorMountDiameterMm = parseOptionalNumber(
     body.motor_mount_diameter_mm ?? body.motorMountDiameterMm,
   )
 
-  // Insert baseline version 1 configuration snapshot
-  await db.insert(schema.rocketConfigurations).values({
-    rocketId: newRocket.id,
-    version: 1,
-    airframeMaterial,
-    finCount,
-    dryMassG,
-    loadedMassG,
-    ballastG,
-    cgMm,
-    cpMm,
-    stabilityCalibers,
-    recoveryType,
-    parachuteSizeMm,
-    motorMountDiameterMm,
-    isCurrent: true,
-    createdBy: flyer.id,
-  })
+  const hasConfigData =
+    finCount != null ||
+    dryMassG != null ||
+    loadedMassG != null ||
+    ballastG != null ||
+    cgMm != null ||
+    cpMm != null ||
+    stabilityCalibers != null ||
+    rawRecovery != null ||
+    parachuteSizeMm != null ||
+    drogueParachuteSizeMm != null ||
+    motorMountDiameterMm != null ||
+    airframeMaterial != null
+
+  // Insert baseline version 1 configuration snapshot if configuration fields were provided
+  if (hasConfigData) {
+    await db.insert(schema.rocketConfigurations).values({
+      rocketId: newRocket.id,
+      version: 1,
+      airframeMaterial,
+      finCount,
+      dryMassG,
+      loadedMassG,
+      ballastG,
+      cgMm,
+      cpMm,
+      stabilityCalibers,
+      recoveryType,
+      parachuteSizeMm,
+      drogueParachuteSizeMm,
+      motorMountDiameterMm,
+      isCurrent: true,
+      createdBy: flyer.id,
+    })
+  }
 
   return c.redirect(`/rockets/${newRocket.id}`, 303)
 })
@@ -536,6 +557,10 @@ rocketsRouter.post('/:id/configurations', async (c) => {
       : null
 
   const parachuteSizeMm = parseOptionalNumber(body.parachute_size_mm ?? body.parachuteSizeMm)
+  const drogueParachuteSizeMm =
+    recoveryType === 'dual_deploy'
+      ? parseOptionalNumber(body.drogue_parachute_size_mm ?? body.drogueParachuteSizeMm)
+      : null
   const motorMountDiameterMm = parseOptionalNumber(
     body.motor_mount_diameter_mm ?? body.motorMountDiameterMm,
   )
@@ -554,6 +579,7 @@ rocketsRouter.post('/:id/configurations', async (c) => {
     stabilityCalibers,
     recoveryType,
     parachuteSizeMm,
+    drogueParachuteSizeMm,
     motorMountDiameterMm,
     isCurrent: true,
     createdBy: flyer.id,

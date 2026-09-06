@@ -10,13 +10,13 @@ import { html } from 'hono/html'
 import type { HtmlEscapedString } from 'hono/utils/html'
 import type { ActiveFlyer } from '../db/context'
 
-export type NavTab = 'dashboard' | 'flights' | 'rockets' | 'motors' | 'inventory' | 'sites' | 'events'
+export type NavTab = 'dashboard' | 'flights' | 'rockets' | 'motors' | 'inventory' | 'sites' | 'events' | 'admin'
 
 export interface PageLayoutOptions {
   title: string
   activeTab: NavTab
   content: HtmlEscapedString | Promise<HtmlEscapedString> | string
-  user?: ActiveFlyer | null
+  user?: (ActiveFlyer & { role?: string; regulatoryRegion?: string }) | null
 }
 
 export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Promise<HtmlEscapedString> {
@@ -89,14 +89,11 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
             <a href="/inventory" class="${desktopNavLinkClass('inventory')}">Inventory</a>
             <a href="/sites" class="${desktopNavLinkClass('sites')}">Sites</a>
             <a href="/events" class="${desktopNavLinkClass('events')}">Events</a>
+            ${user?.role === 'admin' ? html`<a href="/admin/users" class="${desktopNavLinkClass('admin')}">Admin</a>` : ''}
           </nav>
         </div>
 
         <div class="flex items-center space-x-4">
-          <a href="/flights/new" class="inline-flex items-center px-3.5 py-1.5 border border-transparent text-sm font-semibold rounded-md shadow-sm text-slate-950 bg-brand-400 hover:bg-brand-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 focus:ring-offset-slate-900 transition-colors">
-            + Log Flight
-          </a>
-
           ${
             user
               ? html`
@@ -149,9 +146,6 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
           `
           : html`<a href="/login" class="text-xs text-brand-400 font-semibold">Sign In</a>`
       }
-      <a href="/flights/new" class="text-xs bg-brand-400 text-slate-950 font-bold px-2.5 py-1 rounded shadow hover:bg-brand-300 transition-colors">
-        + Log Flight
-      </a>
     </div>
   </div>
 
@@ -186,6 +180,12 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
       <span class="text-lg leading-none mb-1 block">📍</span>
       <span>Sites</span>
     </a>
+    ${user?.role === 'admin' ? html`
+      <a href="/admin/users" class="${mobileNavLinkClass('admin')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">⚙️</span>
+        <span>Admin</span>
+      </a>
+    ` : ''}
   </nav>
 
 </body>

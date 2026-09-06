@@ -13,6 +13,8 @@ import { log, type TraceContext } from './logging'
 import type { ActiveFlyer } from './db/context'
 import { authMiddleware } from './middleware/auth'
 import { authRouter } from './routes/auth'
+import { setupRouter } from './routes/setup'
+import { adminRouter } from './routes/admin'
 import { dashboardRouter } from './routes/dashboard'
 import { rocketsRouter } from './routes/rockets'
 import { motorsRouter } from './routes/motors'
@@ -20,6 +22,7 @@ import { inventoryRouter } from './routes/inventory'
 import { sitesRouter } from './routes/sites'
 import { eventsRouter } from './routes/events'
 import { flightsRouter } from './routes/flights'
+import { settingsRouter } from './routes/settings'
 import { pageLayout } from './views/layout'
 
 type Bindings = {
@@ -56,9 +59,11 @@ app.use('*', async (c, next) => {
 app.use('*', authMiddleware)
 
 /**
- * Mount auth routes (login, register, logout, pilot switcher)
+ * Mount auth and setup routes (login, register, logout, pilot switcher, setup wizard)
  */
 app.route('/', authRouter)
+app.route('/', setupRouter)
+app.route('/admin', adminRouter)
 
 /**
  * Mount all domain sub-routers
@@ -70,6 +75,8 @@ app.route('/inventory', inventoryRouter)
 app.route('/sites', sitesRouter)
 app.route('/events', eventsRouter)
 app.route('/flights', flightsRouter)
+app.route('/settings', settingsRouter)
+app.route('/', settingsRouter)
 
 /**
  * Liveness probe. Does not touch the database.
