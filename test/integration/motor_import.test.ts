@@ -305,4 +305,89 @@ describe('Requirement R2: 20-Column Motor Product CSV Import', () => {
       }
     })
   })
+
+  describe('Tier 5: Scale & Tolerant Parsing Validation (700+ Motors & CTI/Missing Fields)', () => {
+    it('5.1: successfully imports Cesaroni 640J120-14A with CTI designation and missing optional fields', async () => {
+      // Missing Part_Number, Grains, Propellant_Weight_g, Grain_Weight_g, Total_Weight_g, Notes
+      // Delay formatted with letter suffix: "14A"
+      const ctiCsv = [
+        CSV_HEADER,
+        ',640J120-14A,Cesaroni (Pro54),54,Pro54,640,120,200,other,,,,-,UN0432,1.4C,255,5.3,14A,false,',
+      ].join('\n')
+
+      const res = await fetchPostForm('/motors/import', { csv_data: ctiCsv }, {}, { redirect: 'manual' })
+      expect([200, 302, 303]).toContain(res.status)
+
+      const motor = await env.DB.prepare(
+        'SELECT * FROM motors WHERE model = ? AND manufacturer = ?',
+      ).bind('640J120-14A', 'Cesaroni (Pro54)').first<{
+        model: string
+        manufacturer: string
+        diameter_mm: number | null
+        delay_s: number | null
+        grains: number | null
+        grain_weight_g: number | null
+        notes: string | null
+        part_number: string | null
+      }>()
+
+      expect(motor).not.toBeNull()
+      expect(motor?.model).toBe('640J120-14A')
+      expect(motor?.manufacturer).toBe('Cesaroni (Pro54)')
+      expect(motor?.diameter_mm).toBe(54)
+      expect(motor?.delay_s).toBe(14)
+      expect(motor?.grains).toBeNull()
+      expect(motor?.grain_weight_g).toBeNull()
+      expect(motor?.part_number).toBeNull()
+      expect(motor?.notes).toBeNull()
+    })
+
+    it('5.2: successfully imports fractional motor 1/2A6-2 and infers impulse class with missing total impulse', async () => {
+      const fracCsv = [
+        CSV_HEADER,
+        'EST-FRAC,1/2A6-2,Estes,13,Single Use,,6,14,Black Powder,1,3.5,3.5,15,UN0432,1.4S,45,0.8,2,true,Small fractional motor',
+      ].join('\n')
+
+      const res = await fetchPostForm('/motors/import', { csv_data: fracCsv }, {}, { redirect: 'manual' })
+      expect([200, 302, 303]).toContain(res.status)
+
+      const motor = await env.DB.prepare(
+        'SELECT impulse_class FROM motors WHERE model = ?',
+      ).bind('1/2A6-2').first<{ impulse_class: string }>()
+
+      expect(motor?.impulse_class).toBe('A')
+    })
+
+    it('5.3: imports 709 motors in a single request and re-imports them without query/subrequest exhaustion', async () => {
+      // Generate 709 distinct motors
+      const rows: string[] = [CSV_HEADER]
+      for (let i = 1; i <= 709; i++) {
+        rows.push(
+          `PART-${i},MTR-SCALE-${i},Manufacturer-${(i % 5) + 1},29,RMS,240,120,180,APCP,3,100,33.3,200,UN0432,1.4C,180,2.0,${(i % 15)},true,Scale test motor ${i}`,
+        )
+      }
+      const csvData = rows.join('\n')
+
+      // Initial import of 709 motors
+      const res1 = await fetchPostForm('/motors/import', { csv_data: csvData }, {}, { redirect: 'manual' })
+      expect([200, 302, 303]).toContain(res1.status)
+
+      const count1 = await env.DB.prepare(
+        'SELECT count(*) as count FROM motors',
+      ).first<{ count: number }>()
+      expect(count1?.count).toBe(709)
+
+      // Re-import of same 709 motors (must update in-place without exceeding subrequest limits or throwing errors)
+      const res2 = await fetchPostForm('/motors/import', { csv_data: csvData })
+      expect(res2.status).toBe(200)
+      const html2 = await res2.text()
+      expect(html2).toContain('709 updated')
+      expect(html2).not.toContain('Failed to process')
+
+      const count2 = await env.DB.prepare(
+        'SELECT count(*) as count FROM motors',
+      ).first<{ count: number }>()
+      expect(count2?.count).toBe(709)
+    })
+  })
 })
