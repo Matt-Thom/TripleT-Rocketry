@@ -66,6 +66,9 @@ export const TRANSACTION_TYPE = [
   'loaned_out', 'borrowed', 'audit_adjustment',
 ] as const
 
+export const USER_ROLE = ['admin', 'flyer'] as const
+export const REGULATORY_REGION = ['SA', 'US'] as const
+
 // --- Shared column builders ------------------------------------------------
 
 const uuidPk = () =>
@@ -127,6 +130,8 @@ export const users = sqliteTable(
     email: text('email').notNull(),
     displayName: text('display_name').notNull(),
     passwordHash: text('password_hash').notNull(),
+    role: text('role', { enum: USER_ROLE }).notNull().default('flyer'),
+    regulatoryRegion: text('regulatory_region').notNull().default('SA'),
     isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
     createdAt: integer('created_at').notNull().default(nowMs),
     updatedAt: integer('updated_at')
@@ -134,7 +139,10 @@ export const users = sqliteTable(
       .default(nowMs)
       .$onUpdate(() => Date.now()),
   },
-  (t) => [uniqueIndex('uq_users_email').on(t.email)],
+  (t) => [
+    uniqueIndex('uq_users_email').on(t.email),
+    enumCheck('ck_users_role', t.role, USER_ROLE),
+  ],
 )
 
 export const certifications = sqliteTable(
@@ -194,6 +202,7 @@ export const rocketConfigurations = sqliteTable(
     stabilityCalibers: real('stability_calibers'),
     recoveryType: text('recovery_type', { enum: RECOVERY_TYPE }),
     parachuteSizeMm: real('parachute_size_mm'),
+    drogueParachuteSizeMm: real('drogue_parachute_size_mm'),
     motorMountDiameterMm: real('motor_mount_diameter_mm'),
     isCurrent: integer('is_current', { mode: 'boolean' }).notNull().default(true),
     ...auditColumns,
@@ -225,6 +234,15 @@ export const motors = sqliteTable(
     certNumber: text('cert_number'),
     certifyingOrg: text('certifying_org', { enum: CERTIFYING_ORG }),
     weightG: real('weight_g'),
+    partNumber: text('part_number'),
+    hardware: text('hardware'),
+    grains: integer('grains'),
+    propellantWeightG: real('propellant_weight_g'),
+    grainWeightG: real('grain_weight_g'),
+    unNumber: text('un_number'),
+    hazardClassification: text('hazard_classification'),
+    uspsMailable: integer('usps_mailable', { mode: 'boolean' }).default(false),
+    notes: text('notes'),
     ...auditColumns,
   },
   (t) => [
@@ -414,5 +432,51 @@ export const inventoryTransactions = sqliteTable(
     index('ix_inventory_transactions_type').on(t.transactionType),
     enumCheck('ck_inventory_transactions_type', t.transactionType, TRANSACTION_TYPE),
   ],
+)
+
+export const siteSettings = sqliteTable('site_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  createdAt: integer('created_at').notNull().default(nowMs),
+  updatedAt: integer('updated_at')
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => Date.now()),
+})
+
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: integer('created_at').notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('uq_sessions_token').on(t.token),
+    index('ix_sessions_user_id').on(t.userId),
+  ],
+)
+
+export const userCredentials = sqliteTable(
+  'user_credentials',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicKey: text('public_key').notNull(),
+    counter: integer('counter').notNull().default(0),
+    deviceType: text('device_type'),
+    backedUp: integer('backed_up', { mode: 'boolean' }).notNull().default(false),
+    transports: text('transports'),
+    friendlyName: text('friendly_name'),
+    createdAt: integer('created_at').notNull().default(nowMs),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('ix_user_credentials_user_id').on(t.userId)],
 )
 

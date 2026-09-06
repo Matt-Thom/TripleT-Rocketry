@@ -26,6 +26,7 @@ import {
 import {
   inventoryHubView,
   addComponentFormView,
+  editComponentFormView,
   custodyLedgerView,
   recordTransactionFormView,
   getCategoryBadgeClasses,
@@ -93,6 +94,7 @@ export async function listInventoryHandler(c: any) {
         propellantType: schema.motors.propellantType,
         casingReusable: schema.motors.casingReusable,
         weightG: schema.motors.weightG,
+        propellantWeightG: schema.motors.propellantWeightG,
       },
     })
     .from(schema.motorInventories)
@@ -184,7 +186,7 @@ export async function listInventoryHandler(c: any) {
     ...motorRows.map((m) => ({
       quantityOnHand: m.quantityOnHand,
       storageLocation: m.storageLocation,
-      propellantMassG: m.motor?.weightG || 0,
+      propellantMassG: m.motor?.propellantWeightG ?? m.motor?.weightG ?? 0,
       impulseClass: m.motor?.impulseClass,
       condition: 'new',
     })),
@@ -197,7 +199,9 @@ export async function listInventoryHandler(c: any) {
     })),
   ]
 
-  const storageSummary = calculateStorageSummary(itemsForStorage)
+  const userRegion: 'SA' | 'US' = (flyer as any)?.regulatoryRegion === 'US' ? 'US' : 'SA'
+  const limitG = userRegion === 'US' ? 22680 : 3000
+  const storageSummary = calculateStorageSummary(itemsForStorage, limitG, userRegion)
 
   const content = inventoryHubView({
     motors: motorRows,
@@ -205,6 +209,7 @@ export async function listInventoryHandler(c: any) {
     transactions: transactionRows,
     storageSummary,
     activeFilter: filter,
+    region: userRegion,
   })
 
   const fullHtml = pageLayout({
@@ -647,6 +652,103 @@ export async function adjustComponentHandler(c: any) {
 }
 
 /**
+ * Component Edit Form View (GET /inventory/components/:id).
+ */
+export async function editComponentFormHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const id = c.req.param('id')
+
+  const [comp] = await db
+    .select()
+    .from(schema.components)
+    .where(and(eq(schema.components.id, id), isNull(schema.components.deletedAt)))
+    .limit(1)
+
+  if (!comp) {
+    return c.text('Component not found', 404)
+  }
+
+  const content = editComponentFormView(comp)
+  const fullHtml = pageLayout({
+    title: `Edit Component — ${comp.name}`,
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * Update Component Handler (POST /inventory/components/:id).
+ */
+export async function updateComponentHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const id = c.req.param('id')
+
+  let body: any = {}
+  const contentType = c.req.header('content-type') || ''
+  if (contentType.includes('application/json')) {
+    body = await c.req.json().catch(() => ({}))
+  } else {
+    body = await c.req.parseBody().catch(() => ({}))
+  }
+
+  const name = String(body.name || '').trim()
+  const category = String(body.category || 'other').trim()
+  const manufacturer = body.manufacturer ? String(body.manufacturer).trim() : null
+  const partNumber = body.part_number || body.partNumber ? String(body.part_number || body.partNumber).trim() : null
+  const serialNumber = body.serial_number || body.serialNumber ? String(body.serial_number || body.serialNumber).trim() : null
+  const rawQty = body.quantity_on_hand !== undefined ? body.quantity_on_hand : body.quantityOnHand
+  const quantityOnHand = Math.max(0, parseInt(String(rawQty ?? 0), 10) || 0)
+  const condition = String(body.condition || 'new').trim()
+  const storageLocation = body.storage_location || body.storageLocation ? String(body.storage_location || body.storageLocation).trim() : null
+  const propellantMassG = body.propellant_mass_g || body.propellantMassG ? parseFloat(String(body.propellant_mass_g || body.propellantMassG)) : null
+  const hazardClass = body.hazard_class || body.hazardClass ? String(body.hazard_class || body.hazardClass).trim() : null
+  const expirationDate = body.expiration_date || body.expirationDate ? String(body.expiration_date || body.expirationDate).trim() : null
+  const notes = body.notes ? String(body.notes).trim() : null
+
+  if (!name) {
+    return c.json({ error: 'Component name is required' }, 400)
+  }
+
+  const [existing] = await db
+    .select()
+    .from(schema.components)
+    .where(and(eq(schema.components.id, id), isNull(schema.components.deletedAt)))
+    .limit(1)
+
+  if (!existing) {
+    return c.text('Component not found', 404)
+  }
+
+  await db
+    .update(schema.components)
+    .set({
+      name,
+      category: category as any,
+      manufacturer,
+      partNumber,
+      serialNumber,
+      quantityOnHand,
+      condition: condition as any,
+      storageLocation,
+      propellantMassG,
+      hazardClass,
+      expirationDate,
+      notes,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.components.id, id))
+
+  return c.redirect('/inventory', 303)
+}
+
+/**
  * View Full Custody Ledger (GET /inventory/transactions).
  */
 export async function custodyLedgerHandler(c: any) {
@@ -836,11 +938,43 @@ export async function createTransactionHandler(c: any) {
   }
 
   if (!motorInvId && !componentId) {
+    // Check if flyer has an existing motor inventory record to associate with
+    const [defaultInv] = await db
+      .select({ id: schema.motorInventories.id })
+      .from(schema.motorInventories)
+      .where(
+        and(
+          eq(schema.motorInventories.userId, flyer.id),
+          isNull(schema.motorInventories.deletedAt),
+        ),
+      )
+      .limit(1)
+
+    if (defaultInv) {
+      motorInvId = defaultInv.id
+    } else {
+      const [defaultComp] = await db
+        .select({ id: schema.components.id })
+        .from(schema.components)
+        .where(
+          and(
+            eq(schema.components.userId, flyer.id),
+            isNull(schema.components.deletedAt),
+          ),
+        )
+        .limit(1)
+      if (defaultComp) {
+        componentId = defaultComp.id
+      }
+    }
+  }
+
+  if (!motorInvId && !componentId) {
     return c.json({ error: 'Must select a motor or component' }, 400)
   }
 
   // If transferring/selling a motor, perform regulatory compliance evaluation
-  let complianceNotes = ''
+  let complianceNotes = String(body.compliance_notes || body.complianceNotes || '').trim()
   if (motorInvId) {
     const [inv] = await db
       .select({
@@ -982,6 +1116,8 @@ inventoryRouter.get('/inventory/:id/adjust', adjustInventoryHandler)
 inventoryRouter.get('/components/new', newComponentFormHandler)
 inventoryRouter.post('/components', addComponentHandler)
 inventoryRouter.post('/components/:id/adjust', adjustComponentHandler)
+inventoryRouter.get('/components/:id', editComponentFormHandler)
+inventoryRouter.post('/components/:id', updateComponentHandler)
 
 // Chain-of-custody transactions
 inventoryRouter.get('/transactions', custodyLedgerHandler)

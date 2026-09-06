@@ -114,9 +114,9 @@ describe('Web Shell & UI Navigation (GET /)', () => {
     expect(html).toContain('href="/sites"')
     expect(html).toContain('href="/events"')
 
-    // Quick action button
-    expect(html).toContain('+ Log Flight')
+    // Contextual action button on page
     expect(html).toContain('href="/flights/new"')
+    expect(html).toContain('Log New Flight')
   })
 
   it('renders mobile Range Companion bottom navigation bar', async () => {

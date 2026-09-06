@@ -102,7 +102,11 @@ flightsRouter.get('/', async (c) => {
     eventName: f.eventName || null,
   }))
 
-  const content = flightsListView(flights)
+  const unitsQuery = c.req.query('units')?.toLowerCase()
+  const unitSystem: 'imperial' | 'metric' = unitsQuery === 'ft' || unitsQuery === 'feet' ? 'imperial' : 'metric'
+  const units = unitSystem === 'imperial' ? 'ft' : 'm'
+
+  const content = flightsListView(flights, units, unitSystem)
   const fullHtml = pageLayout({
     title: 'Flight Logbook',
     activeTab: 'flights',
@@ -698,6 +702,10 @@ flightsRouter.get('/:id', async (c) => {
     rocket = r ?? null
   }
 
+  const unitsQuery = c.req.query('units')?.toLowerCase()
+  const unitSystem: 'imperial' | 'metric' = unitsQuery === 'ft' || unitsQuery === 'feet' ? 'imperial' : 'metric'
+  const units = unitSystem === 'imperial' ? 'ft' : 'm'
+
   const content = flightDetailView({
     flight: {
       ...flight,
@@ -710,6 +718,8 @@ flightsRouter.get('/:id', async (c) => {
     site,
     event,
     flyer,
+    units,
+    unitSystem,
   })
 
   const title = rocket ? `${rocket.name} — Flight #${flight.flightNumber || 1}` : 'Flight Details'

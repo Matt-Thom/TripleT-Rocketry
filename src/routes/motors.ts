@@ -8,15 +8,16 @@
  */
 
 import { Hono } from 'hono'
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull, like, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import { html } from 'hono/html'
 import * as schema from '../db/schema'
 import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
-import { motorCatalogView, motorDetailView } from '../views/motors'
+import { motorCatalogView, motorDetailView, motorImportView } from '../views/motors'
 import { pageLayout } from '../views/layout'
 import { adjustInventoryHandler } from './inventory'
+import { importMotorsFromCsv } from '../services/motor_import'
 
 type Bindings = {
   DB: D1Database
@@ -32,7 +33,7 @@ export const motorsRouter = new Hono<{ Bindings: Bindings; Variables: Variables 
 
 /**
  * Motor Catalog Listing Handler.
- * Supports filtering by `?impulse_class=...`.
+ * Supports filtering by `?impulse_class=...` and searching by `?search=...`.
  * Joins/maps active flyer's inventory stock on hand and expended counts.
  */
 async function listMotorsHandler(c: any) {
@@ -41,35 +42,33 @@ async function listMotorsHandler(c: any) {
 
   const rawImpulseClass = c.req.query('impulse_class') || c.req.query('class') || null
   const impulseClassFilter = rawImpulseClass ? rawImpulseClass.toUpperCase().trim() : null
+  const searchQuery = c.req.query('search') ? c.req.query('search').trim() : null
 
-  let motorsList: (typeof schema.motors.$inferSelect)[] = []
+  const conditions: any[] = [isNull(schema.motors.deletedAt)]
 
   if (impulseClassFilter && impulseClassFilter !== 'ALL') {
-    motorsList = await db
-      .select()
-      .from(schema.motors)
-      .where(
-        and(
-          eq(schema.motors.impulseClass, impulseClassFilter as any),
-          isNull(schema.motors.deletedAt),
-        ),
-      )
-      .orderBy(
-        asc(schema.motors.impulseClass),
-        asc(schema.motors.totalImpulseNs),
-        asc(schema.motors.model),
-      )
-  } else {
-    motorsList = await db
-      .select()
-      .from(schema.motors)
-      .where(isNull(schema.motors.deletedAt))
-      .orderBy(
-        asc(schema.motors.impulseClass),
-        asc(schema.motors.totalImpulseNs),
-        asc(schema.motors.model),
-      )
+    conditions.push(eq(schema.motors.impulseClass, impulseClassFilter as any))
   }
+
+  if (searchQuery) {
+    conditions.push(
+      or(
+        like(schema.motors.model, `%${searchQuery}%`),
+        like(schema.motors.manufacturer, `%${searchQuery}%`),
+        like(schema.motors.partNumber, `%${searchQuery}%`),
+      ),
+    )
+  }
+
+  const motorsList = await db
+    .select()
+    .from(schema.motors)
+    .where(and(...conditions))
+    .orderBy(
+      asc(schema.motors.impulseClass),
+      asc(schema.motors.totalImpulseNs),
+      asc(schema.motors.model),
+    )
 
   // Retrieve active user's inventory records
   const inventoryRows = await db
@@ -176,6 +175,103 @@ async function getMotorDetailHandler(c: any) {
     'Content-Type': 'text/html; charset=utf-8',
   })
 }
+
+/**
+ * Motor CSV Import Form View (GET /motors/import).
+ */
+export async function getMotorImportHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const content = motorImportView()
+  const fullHtml = pageLayout({
+    title: 'Import Motor Catalog',
+    activeTab: 'motors',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * Motor CSV Import Action (POST /motors/import).
+ */
+export async function postMotorImportHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  let csvContent = ''
+  const contentType = c.req.header('content-type') || ''
+
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await c.req.formData().catch(() => null)
+    if (formData) {
+      const file = formData.get('csv_file') as File | null
+      const text = formData.get('csv_data') as string | null
+      if (file && typeof file.text === 'function') {
+        csvContent = await file.text()
+      } else if (text) {
+        csvContent = text
+      }
+    }
+  } else if (contentType.includes('application/json')) {
+    const json = await c.req.json().catch(() => ({}))
+    csvContent = json.csv_data || json.csv || ''
+  } else {
+    const body = await c.req.parseBody().catch(() => ({}))
+    csvContent = (body.csv_data || body.csv || '') as string
+  }
+
+  if (!csvContent || csvContent.trim() === '') {
+    const content = motorImportView({ error: 'Empty CSV data submitted: no data to import' })
+    const fullHtml = pageLayout({
+      title: 'Import Motor Catalog',
+      activeTab: 'motors',
+      content,
+      user: flyer,
+    })
+    return c.html(fullHtml, 400, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const result = await importMotorsFromCsv(db, csvContent)
+
+  if (!result.success && result.total === 0) {
+    const errorMsg = result.errors[0] || 'Invalid CSV schema: missing required headers'
+    const content = motorImportView({ error: errorMsg })
+    const fullHtml = pageLayout({
+      title: 'Import Motor Catalog',
+      activeTab: 'motors',
+      content,
+      user: flyer,
+    })
+    return c.html(fullHtml, 400, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const content = motorImportView({ summary: result })
+  const fullHtml = pageLayout({
+    title: 'Import Motor Catalog — Results',
+    activeTab: 'motors',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+// Import endpoints (must precede /:id)
+motorsRouter.get('/import', getMotorImportHandler)
+motorsRouter.get('/motors/import', getMotorImportHandler)
+motorsRouter.post('/import', postMotorImportHandler)
+motorsRouter.post('/motors/import', postMotorImportHandler)
 
 // Catalog endpoints
 motorsRouter.get('/', listMotorsHandler)

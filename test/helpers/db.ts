@@ -26,6 +26,9 @@ export async function truncateDb(): Promise<void> {
     'rockets',
     'motors',
     'launch_sites',
+    'sessions',
+    'user_credentials',
+    'site_settings',
     'users',
   ]
   for (const table of tablesInReverseFkOrder) {

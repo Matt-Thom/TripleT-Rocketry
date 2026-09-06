@@ -10,15 +10,12 @@ interface LoginViewOptions {
   redirectUrl?: string
   error?: string | null
   pilots?: ActiveFlyer[]
-}
-
-interface RegisterViewOptions {
-  redirectUrl?: string
-  error?: string | null
+  quickSignInEnabled?: boolean
 }
 
 export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { redirectUrl = '/', error = null, pilots = [] } = options
+  const { redirectUrl = '/', error = null, pilots = [], quickSignInEnabled = true } = options
+  const safeRedirect = redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/'
 
   return html`
     <div class="max-w-lg mx-auto py-8">
@@ -42,7 +39,7 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
 
         <!-- Email / Password Login Form -->
         <form method="POST" action="/login" class="space-y-4">
-          <input type="hidden" name="redirect" value="${redirectUrl}">
+          <input type="hidden" name="redirect" value="${safeRedirect}">
 
           <div>
             <label for="email" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
@@ -83,9 +80,101 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
           </button>
         </form>
 
+        <!-- Passkey / WebAuthn Sign-In -->
+        <div class="mt-4 pt-4 border-t border-slate-800">
+          <button
+            type="button"
+            id="passkey-signin-btn"
+            class="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-200 hover:text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 shadow-sm"
+          >
+            <span class="text-base">🔑</span>
+            <span>Sign in with Passkey</span>
+          </button>
+          <div id="passkey-error" class="hidden mt-2 p-2.5 rounded-lg bg-rose-950/80 border border-rose-800 text-rose-300 text-xs text-center"></div>
+        </div>
+
+        <script>
+          document.getElementById('passkey-signin-btn')?.addEventListener('click', async () => {
+            const errEl = document.getElementById('passkey-error');
+            if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+            try {
+              if (!window.PublicKeyCredential) {
+                throw new Error('WebAuthn Passkeys are not supported on this browser/device');
+              }
+              const optRes = await fetch('/auth/webauthn/login-options', {
+                headers: { 'Accept': 'application/json' }
+              });
+              if (!optRes.ok) throw new Error('Failed to retrieve passkey challenge options');
+              const options = await optRes.json();
+
+              function base64UrlToBuffer(b64url) {
+                const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+                const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+                const binary = atob(b64 + pad);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                return bytes.buffer;
+              }
+
+              function bufferToBase64Url(buffer) {
+                if (!buffer) return null;
+                const bytes = new Uint8Array(buffer);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+              }
+
+              const challengeBuffer = base64UrlToBuffer(options.challenge);
+
+              const credential = await navigator.credentials.get({
+                publicKey: {
+                  challenge: challengeBuffer,
+                  timeout: options.timeout || 60000,
+                  userVerification: options.userVerification || 'preferred',
+                  rpId: options.rpId || window.location.hostname
+                }
+              });
+
+              if (!credential) throw new Error('Passkey credential assertion cancelled');
+
+              const responsePayload = {
+                clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+                authenticatorData: bufferToBase64Url(credential.response.authenticatorData),
+                signature: bufferToBase64Url(credential.response.signature),
+                userHandle: credential.response.userHandle ? bufferToBase64Url(credential.response.userHandle) : null
+              };
+
+              const rawIdB64 = bufferToBase64Url(credential.rawId);
+
+              const verifyRes = await fetch('/auth/webauthn/login-verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({
+                  id: credential.id,
+                  rawId: rawIdB64,
+                  type: credential.type,
+                  response: responsePayload
+                })
+              });
+
+              if (!verifyRes.ok) {
+                const errData = await verifyRes.json().catch(() => ({}));
+                throw new Error(errData.error || 'Passkey verification failed');
+              }
+
+              window.location.href = '${safeRedirect}';
+            } catch (err) {
+              if (errEl) {
+                errEl.textContent = err.message || 'Passkey login failed';
+                errEl.classList.remove('hidden');
+              }
+            }
+          });
+        </script>
+
         <!-- Quick Switch / Demo Pilots Section -->
         ${
-          pilots.length > 0
+          quickSignInEnabled && pilots.length > 0
             ? html`
               <div class="mt-8 pt-6 border-t border-slate-800">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 text-center">
@@ -95,7 +184,7 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
                   ${pilots.map(
                     (p) => html`
                       <form method="POST" action="/login">
-                        <input type="hidden" name="redirect" value="${redirectUrl}">
+                        <input type="hidden" name="redirect" value="${safeRedirect}">
                         <input type="hidden" name="email" value="${p.email}">
                         <input type="hidden" name="password" value="rocketry123!">
                         <button
@@ -132,7 +221,7 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
         <div class="mt-6 pt-4 border-t border-slate-800 text-center">
           <p class="text-xs text-slate-400">
             Need a new rocketry profile?
-            <a href="/register?redirect=${encodeURIComponent(redirectUrl)}" class="text-brand-400 hover:text-brand-300 font-semibold ml-1">
+            <a href="/register?redirect=${encodeURIComponent(safeRedirect)}" class="text-brand-400 hover:text-brand-300 font-semibold ml-1">
               Create Account
             </a>
           </p>
@@ -142,8 +231,14 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
   `
 }
 
+export interface RegisterViewOptions {
+  redirectUrl?: string
+  error?: string | null
+}
+
 export function registerView(options: RegisterViewOptions = {}): HtmlEscapedString | Promise<HtmlEscapedString> {
   const { redirectUrl = '/', error = null } = options
+  const safeRedirect = redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/'
 
   return html`
     <div class="max-w-lg mx-auto py-8">
@@ -166,7 +261,7 @@ export function registerView(options: RegisterViewOptions = {}): HtmlEscapedStri
         }
 
         <form method="POST" action="/register" class="space-y-4">
-          <input type="hidden" name="redirect" value="${redirectUrl}">
+          <input type="hidden" name="redirect" value="${safeRedirect}">
 
           <div>
             <label for="displayName" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
@@ -267,7 +362,7 @@ export function registerView(options: RegisterViewOptions = {}): HtmlEscapedStri
         <div class="mt-6 pt-4 border-t border-slate-800 text-center">
           <p class="text-xs text-slate-400">
             Already have an account?
-            <a href="/login?redirect=${encodeURIComponent(redirectUrl)}" class="text-brand-400 hover:text-brand-300 font-semibold ml-1">
+            <a href="/login?redirect=${encodeURIComponent(safeRedirect)}" class="text-brand-400 hover:text-brand-300 font-semibold ml-1">
               Sign In
             </a>
           </p>

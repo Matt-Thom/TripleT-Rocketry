@@ -23,6 +23,9 @@ const TABLES = [
   'motors',
   'rocket_configurations',
   'rockets',
+  'sessions',
+  'site_settings',
+  'user_credentials',
   'users',
 ]
 
@@ -41,6 +44,9 @@ async function truncate() {
     'rockets',
     'motors',
     'launch_sites',
+    'sessions',
+    'user_credentials',
+    'site_settings',
     'users',
   ]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run()

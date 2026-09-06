@@ -26,6 +26,7 @@ export interface RocketConfigSummary {
   stabilityCalibers?: number | null
   recoveryType?: string | null
   parachuteSizeMm?: number | null
+  drogueParachuteSizeMm?: number | null
   motorMountDiameterMm?: number | null
   airframeMaterial?: string | null
   finCount?: number | null
@@ -371,18 +372,22 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                     <div class="mt-1 text-base font-bold text-white">
                       ${activeConfig.cgMm != null ? `${activeConfig.cgMm} mm` : '—'}
                     </div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">Distance from Nose Cone Tip</div>
                   </div>
                   <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
                     <div class="text-xs text-slate-400">Center of Pressure (CP)</div>
                     <div class="mt-1 text-base font-bold text-white">
                       ${activeConfig.cpMm != null ? `${activeConfig.cpMm} mm` : '—'}
                     </div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">Distance from Nose Cone Tip</div>
                   </div>
                   <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
                     <div class="text-xs text-slate-400">Motor Mount / Chute</div>
                     <div class="mt-1 text-sm font-semibold text-white">
                       ${activeConfig.motorMountDiameterMm != null ? `${activeConfig.motorMountDiameterMm}mm` : '—'} /
-                      ${activeConfig.parachuteSizeMm != null ? `${activeConfig.parachuteSizeMm}mm` : '—'}
+                      ${activeConfig.recoveryType === 'dual_deploy'
+                        ? html`<span>Main: ${activeConfig.parachuteSizeMm != null ? `${activeConfig.parachuteSizeMm}mm` : '—'}${activeConfig.drogueParachuteSizeMm != null ? html`, Drogue: ${activeConfig.drogueParachuteSizeMm}mm` : ''}</span>`
+                        : (activeConfig.parachuteSizeMm != null ? `${activeConfig.parachuteSizeMm}mm` : '—')}
                     </div>
                   </div>
                 </div>
@@ -431,8 +436,8 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                       <th scope="col" class="px-4 py-3">Active Status</th>
                       <th scope="col" class="px-4 py-3">Dry Mass (g)</th>
                       <th scope="col" class="px-4 py-3">Loaded Mass (g)</th>
-                      <th scope="col" class="px-4 py-3">CG (mm)</th>
-                      <th scope="col" class="px-4 py-3">CP (mm)</th>
+                      <th scope="col" class="px-4 py-3" title="Reference datum: Distance from Nose Cone Tip">CG (mm)*</th>
+                      <th scope="col" class="px-4 py-3" title="Reference datum: Distance from Nose Cone Tip">CP (mm)*</th>
                       <th scope="col" class="px-4 py-3">Stability</th>
                       <th scope="col" class="px-4 py-3">Recovery</th>
                       <th scope="col" class="px-4 py-3">Parachute (mm)</th>
@@ -501,7 +506,9 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
 
                           <!-- Parachute Size (mm) -->
                           <td class="px-4 py-3.5 whitespace-nowrap">
-                            ${cfg.parachuteSizeMm != null ? `${cfg.parachuteSizeMm} mm` : '—'}
+                            ${cfg.recoveryType === 'dual_deploy'
+                              ? html`<span>Main: ${cfg.parachuteSizeMm != null ? `${cfg.parachuteSizeMm} mm` : '—'}${cfg.drogueParachuteSizeMm != null ? html`<br><span class="text-slate-400">Drogue: ${cfg.drogueParachuteSizeMm} mm</span>` : ''}</span>`
+                              : (cfg.parachuteSizeMm != null ? `${cfg.parachuteSizeMm} mm` : '—')}
                           </td>
 
                           <!-- Motor Mount Diameter (mm) -->
@@ -525,6 +532,9 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                   </tbody>
                 </table>
               </div>
+              <p class="text-[11px] text-slate-500 mt-2 px-1">
+                * Reference datum for CG and CP: Distance from Nose Cone Tip
+              </p>
             `}
       </div>
     </div>
@@ -666,6 +676,7 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
                 id="recovery_type"
                 name="recovery_type"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+                onchange="updateNewRocketRecovery()"
               >
                 <option value="parachute" selected>Parachute</option>
                 <option value="streamer">Streamer</option>
@@ -677,7 +688,7 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
 
             <!-- Parachute Size -->
             <div>
-              <label for="parachute_size_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+              <label for="parachute_size_mm" id="new_rocket_main_chute_label" class="block text-xs font-semibold text-slate-300 mb-1">
                 Parachute Size (mm)
               </label>
               <input
@@ -687,6 +698,22 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
                 min="0"
                 step="any"
                 placeholder="e.g. 600"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+            </div>
+
+            <!-- Drogue Parachute Size (Dual Deploy) -->
+            <div id="new_rocket_drogue_wrap" style="display: none;">
+              <label for="drogue_parachute_size_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Drogue Parachute Size (mm)
+              </label>
+              <input
+                type="number"
+                id="drogue_parachute_size_mm"
+                name="drogue_parachute_size_mm"
+                min="0"
+                step="any"
+                placeholder="e.g. 300"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
               />
             </div>
@@ -753,6 +780,9 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
                 placeholder="e.g. 520.0"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
               />
+              <p class="mt-1 text-[11px] text-slate-400">
+                Reference datum: Distance from Nose Cone Tip
+              </p>
             </div>
 
             <!-- Center of Pressure (CP) -->
@@ -769,6 +799,9 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
                 placeholder="e.g. 640.0"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
               />
+              <p class="mt-1 text-[11px] text-slate-400">
+                Reference datum: Distance from Nose Cone Tip
+              </p>
             </div>
 
             <!-- Stability Calibers -->
@@ -807,6 +840,23 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
           </button>
         </div>
       </form>
+
+      <script>
+        function updateNewRocketRecovery() {
+          var sel = document.getElementById('recovery_type');
+          var wrap = document.getElementById('new_rocket_drogue_wrap');
+          var label = document.getElementById('new_rocket_main_chute_label');
+          if (!sel || !wrap) return;
+          var isDual = sel.value === 'dual_deploy';
+          wrap.style.display = isDual ? 'block' : 'none';
+          if (label) {
+            label.textContent = isDual ? 'Main Parachute Size (mm)' : 'Parachute Size (mm)';
+          }
+        }
+        if (typeof window !== 'undefined') {
+          updateNewRocketRecovery();
+        }
+      </script>
     </div>
   `
 }
@@ -920,9 +970,10 @@ export function newConfigFormView(
               Recovery Type
             </label>
             <select
-              id="recovery_type"
+              id="config_recovery_type"
               name="recovery_type"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              onchange="updateConfigRecovery()"
             >
               <option value="parachute" ${previousConfig?.recoveryType === 'parachute' ? 'selected' : ''}>Parachute</option>
               <option value="streamer" ${previousConfig?.recoveryType === 'streamer' ? 'selected' : ''}>Streamer</option>
@@ -934,8 +985,8 @@ export function newConfigFormView(
 
           <!-- Parachute Size -->
           <div>
-            <label for="parachute_size_mm" class="block text-xs font-semibold text-slate-300 mb-1">
-              Parachute Size (mm)
+            <label for="parachute_size_mm" id="config_main_chute_label" class="block text-xs font-semibold text-slate-300 mb-1">
+              ${previousConfig?.recoveryType === 'dual_deploy' ? 'Main Parachute Size (mm)' : 'Parachute Size (mm)'}
             </label>
             <input
               type="number"
@@ -945,6 +996,23 @@ export function newConfigFormView(
               step="any"
               value="${previousConfig?.parachuteSizeMm != null ? String(previousConfig.parachuteSizeMm) : ''}"
               placeholder="e.g. 600"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+            />
+          </div>
+
+          <!-- Drogue Parachute Size (Dual Deploy) -->
+          <div id="config_drogue_wrap" style="${previousConfig?.recoveryType === 'dual_deploy' ? 'display: block;' : 'display: none;'}">
+            <label for="drogue_parachute_size_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+              Drogue Parachute Size (mm)
+            </label>
+            <input
+              type="number"
+              id="drogue_parachute_size_mm"
+              name="drogue_parachute_size_mm"
+              min="0"
+              step="any"
+              value="${previousConfig?.drogueParachuteSizeMm != null ? String(previousConfig.drogueParachuteSizeMm) : ''}"
+              placeholder="e.g. 300"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             />
           </div>
@@ -1015,6 +1083,9 @@ export function newConfigFormView(
               placeholder="e.g. 520.0"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             />
+            <p class="mt-1 text-[11px] text-slate-400">
+              Reference datum: Distance from Nose Cone Tip
+            </p>
           </div>
 
           <!-- Center of Pressure (CP) -->
@@ -1032,6 +1103,9 @@ export function newConfigFormView(
               placeholder="e.g. 640.0"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             />
+            <p class="mt-1 text-[11px] text-slate-400">
+              Reference datum: Distance from Nose Cone Tip
+            </p>
           </div>
 
           <!-- Stability Calibers -->
@@ -1067,9 +1141,28 @@ export function newConfigFormView(
           </button>
         </div>
       </form>
+
+      <script>
+        function updateConfigRecovery() {
+          var sel = document.getElementById('config_recovery_type');
+          var wrap = document.getElementById('config_drogue_wrap');
+          var label = document.getElementById('config_main_chute_label');
+          if (!sel || !wrap) return;
+          var isDual = sel.value === 'dual_deploy';
+          wrap.style.display = isDual ? 'block' : 'none';
+          if (label) {
+            label.textContent = isDual ? 'Main Parachute Size (mm)' : 'Parachute Size (mm)';
+          }
+        }
+        if (typeof window !== 'undefined') {
+          updateConfigRecovery();
+        }
+      </script>
     </div>
   `
 }
+
+export const newConfigurationFormView = newConfigFormView
 
 /**
  * 5. Edit Rocket Airframe Form View: Modify airframe name and status.

@@ -125,6 +125,12 @@ export function motorCatalogView(
         </div>
         <div class="flex items-center gap-3">
           <a
+            href="/motors/import"
+            class="inline-flex items-center px-3.5 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-sm transition-colors"
+          >
+            <span class="mr-1.5">📥</span> + Import Motors
+          </a>
+          <a
             href="/inventory"
             class="inline-flex items-center px-3.5 py-2 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-brand-300 border border-slate-700 hover:border-brand-500/50 shadow-sm transition-colors"
           >
@@ -814,6 +820,144 @@ export function inventoryListView(inventoryItems: InventoryItemWithMotor[]): Htm
               </table>
             </div>
           `}
+    </div>
+  `
+}
+
+export interface MotorImportViewProps {
+  summary?: {
+    success: boolean
+    total: number
+    imported: number
+    updated: number
+    errors: string[]
+  } | null
+  error?: string | null
+}
+
+export function motorImportView(props: MotorImportViewProps = {}): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const { summary, error } = props
+
+  return html`
+    <div class="max-w-4xl mx-auto space-y-6">
+      <div class="border-b border-slate-800 pb-4">
+        <a href="/motors" class="text-xs text-brand-400 hover:underline">← Back to Motor Catalog</a>
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2.5 mt-2">
+          <span>📥</span>
+          <span>Import Motor Catalog (CSV)</span>
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">
+          Batch import commercial rocket motor specifications using the authoritative 20-column CSV format.
+        </p>
+      </div>
+
+      ${error
+        ? html`
+            <div class="p-4 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-sm flex items-center gap-2">
+              <span>⚠️</span>
+              <span>${error}</span>
+            </div>
+          `
+        : ''}
+
+      ${summary
+        ? html`
+            <div class="p-5 rounded-2xl ${
+              summary.success ? 'bg-emerald-950/40 border border-emerald-800' : 'bg-amber-950/40 border border-amber-800'
+            } space-y-3">
+              <div class="flex items-center gap-2 text-base font-semibold ${
+                summary.success ? 'text-emerald-300' : 'text-amber-300'
+              }">
+                <span>${summary.success ? '✅' : '⚠️'}</span>
+                <span>Import Summary: ${summary.imported} imported, ${summary.updated} updated (${summary.total} total processed)</span>
+              </div>
+              <p class="text-xs text-slate-300">
+                ${summary.imported} new motor records created, ${summary.updated} existing motor records updated.
+              </p>
+              ${summary.errors && summary.errors.length > 0
+                ? html`
+                    <div class="mt-2 text-xs text-rose-300 space-y-1">
+                      <div class="font-bold">Errors encountered:</div>
+                      ${summary.errors.map((e) => html`<div>• ${e}</div>`)}
+                    </div>
+                  `
+                : ''}
+              <div class="pt-2 flex items-center gap-3">
+                <a
+                  href="/motors"
+                  class="inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors"
+                >
+                  View in Motor Catalog →
+                </a>
+              </div>
+            </div>
+          `
+        : ''}
+
+      <!-- 20-Column Schema Reference Card -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <span>📋</span>
+            <span>Authoritative 20-Column CSV Schema</span>
+          </h2>
+          <span class="text-xs text-brand-400 font-mono">RFC 4180 Compliant</span>
+        </div>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          The CSV parser supports standard quotation marks, commas inside quoted strings, multiline entries, and Windows (CRLF) or Unix (LF) line breaks.
+        </p>
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 overflow-x-auto text-xs font-mono text-slate-300">
+          Part_Number, Designation_Product_Name, Manufacturer, Diameter_mm, Hardware, Total_Impulse_Ns, Avg_Thrust_N, Peak_Thrust_N, Propellant_Type, Grains, Propellant_Weight_g, Grain_Weight_g, Total_Weight_g, UN_Number, Classification, Length, Thrust_Duration_Sec, Delay_Sec, USPS_Mailable, Notes
+        </div>
+      </div>
+
+      <!-- Import Form -->
+      <form method="POST" action="/motors/import" enctype="multipart/form-data" class="space-y-6 bg-slate-900/60 p-6 rounded-2xl border border-slate-800">
+        <div>
+          <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">
+            Option 1: Paste CSV Data
+          </label>
+          <textarea
+            name="csv_data"
+            rows="8"
+            placeholder="Paste your 20-column CSV data here including header row..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-white font-mono text-xs focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
+          ></textarea>
+        </div>
+
+        <div class="relative flex items-center justify-center">
+          <div class="border-t border-slate-800 w-full"></div>
+          <div class="bg-slate-900 px-3 text-xs text-slate-500 uppercase font-bold">Or</div>
+          <div class="border-t border-slate-800 w-full"></div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">
+            Option 2: Upload CSV File
+          </label>
+          <input
+            type="file"
+            name="csv_file"
+            accept=".csv,text/csv"
+            class="w-full text-sm text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-brand-300 hover:file:bg-slate-700 cursor-pointer bg-slate-950 border border-slate-700 rounded-xl"
+          />
+        </div>
+
+        <div class="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+          <a
+            href="/motors"
+            class="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="px-5 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm"
+          >
+            Process & Import Motors
+          </button>
+        </div>
+      </form>
     </div>
   `
 }
