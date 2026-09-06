@@ -54,8 +54,7 @@ CREATE TABLE `__new_users` (
 	`updated_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
 	CONSTRAINT "ck_users_role" CHECK("role" IS NULL OR "role" IN ('admin', 'flyer'))
 );
---> statement-breakpoint
-INSERT INTO `__new_users`("id", "email", "display_name", "password_hash", "role", "regulatory_region", "is_active", "created_at", "updated_at") SELECT "id", "email", "display_name", "password_hash", "role", "regulatory_region", "is_active", "created_at", "updated_at" FROM `users`;--> statement-breakpoint
+INSERT INTO `__new_users`("id", "email", "display_name", "password_hash", "role", "regulatory_region", "is_active", "created_at", "updated_at") SELECT "id", "email", "display_name", "password_hash", 'flyer', 'SA', "is_active", "created_at", "updated_at" FROM `users`;--> statement-breakpoint
 DROP TABLE `users`;--> statement-breakpoint
 ALTER TABLE `__new_users` RENAME TO `users`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
