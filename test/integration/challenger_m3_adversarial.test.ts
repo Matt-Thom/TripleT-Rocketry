@@ -199,7 +199,7 @@ describe('Challenger M3: Adversarial Verification & Stress Testing', () => {
       expect([200, 302, 303]).toContain(res.status)
 
       const motor = await env.DB.prepare(
-        'SELECT propellant_type, propellantType FROM motors WHERE model = ?',
+        'SELECT propellant_type, propellant_type AS propellantType FROM motors WHERE model = ?',
       ).bind('KNSU-Test').first<{ propellant_type?: string; propellantType?: string }>()
 
       const prop = motor?.propellant_type ?? motor?.propellantType
@@ -289,7 +289,7 @@ describe('Challenger M3: Adversarial Verification & Stress Testing', () => {
       expect([200, 302, 303]).toContain(res.status)
 
       const motors = await env.DB.prepare(
-        'SELECT model, delay_s, delayS FROM motors WHERE model = ? ORDER BY delay_s ASC',
+        'SELECT model, delay_s, delay_s AS delayS FROM motors WHERE model = ? ORDER BY delay_s ASC',
       ).bind('H128W').all<{ delay_s?: number; delayS?: number }>()
 
       // 3 distinct motors must exist

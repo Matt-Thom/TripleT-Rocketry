@@ -56,17 +56,16 @@ describe('Challenger M1-2: Schema Constraints, Migrations, and Session Integrity
       expect(user.regulatoryRegion).toBe('SA')
     })
 
-    it('1.3: documents that users.role is defined in schema with USER_ROLE enum, while SQLite DDL added role via ALTER TABLE without inline CHECK', async () => {
+    it('1.3: documents that users.role is defined in schema with USER_ROLE enum and enforced in D1 DDL', async () => {
       // In src/db/schema.ts, USER_ROLE is restricted to ['admin', 'flyer']
       expect(schema.USER_ROLE).toEqual(['admin', 'flyer'])
 
-      // In D1 SQLite, ALTER TABLE ADD COLUMN role in 0002_schema_enhancements.sql was executed without an inline CHECK constraint.
-      // D1/SQLite allows inserting arbitrary text unless validated at the application/Drizzle layer.
+      // In D1 SQLite, users table DDL enforces ck_users_role CHECK constraint
       const tableSql = await env.DB.prepare(
         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'",
       ).first<{ sql: string }>()
 
-      expect(tableSql?.sql).not.toContain('ck_users_role')
+      expect(tableSql?.sql).toContain('ck_users_role')
     })
 
     it('1.4: motors table includes all 9 required M1/M3 expansion columns', async () => {

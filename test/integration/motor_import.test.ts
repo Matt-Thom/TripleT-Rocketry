@@ -129,7 +129,7 @@ describe('Requirement R2: 20-Column Motor Product CSV Import', () => {
       expect([200, 302, 303]).toContain(res.status)
 
       const motors = await env.DB.prepare(
-        "SELECT model, propellant_type, propellantType FROM motors WHERE manufacturer IN ('AeroTech', 'Estes')",
+        "SELECT model, propellant_type, propellant_type AS propellantType FROM motors WHERE manufacturer IN ('AeroTech', 'Estes')",
       ).all<{
         model: string
         propellant_type?: string
@@ -150,7 +150,7 @@ describe('Requirement R2: 20-Column Motor Product CSV Import', () => {
       await fetchPostForm('/motors/import', { csv_data: csvData }, {}, { redirect: 'manual' })
 
       const plugged = await env.DB.prepare(
-        'SELECT delay_s, delayS FROM motors WHERE model = ?',
+        'SELECT delay_s, delay_s AS delayS FROM motors WHERE model = ?',
       ).bind('I200-P').first<{ delay_s?: number; delayS?: number }>()
 
       if (plugged) {
