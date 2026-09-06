@@ -41,21 +41,5 @@ ALTER TABLE `motors` ADD `hazard_classification` text;--> statement-breakpoint
 ALTER TABLE `motors` ADD `usps_mailable` integer DEFAULT false;--> statement-breakpoint
 ALTER TABLE `motors` ADD `notes` text;--> statement-breakpoint
 ALTER TABLE `rocket_configurations` ADD `drogue_parachute_size_mm` real;--> statement-breakpoint
-PRAGMA foreign_keys=OFF;--> statement-breakpoint
-CREATE TABLE `__new_users` (
-	`id` text PRIMARY KEY NOT NULL,
-	`email` text NOT NULL,
-	`display_name` text NOT NULL,
-	`password_hash` text NOT NULL,
-	`role` text DEFAULT 'flyer' NOT NULL,
-	`regulatory_region` text DEFAULT 'SA' NOT NULL,
-	`is_active` integer DEFAULT true NOT NULL,
-	`created_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
-	`updated_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
-	CONSTRAINT "ck_users_role" CHECK("role" IS NULL OR "role" IN ('admin', 'flyer'))
-);
-INSERT INTO `__new_users`("id", "email", "display_name", "password_hash", "role", "regulatory_region", "is_active", "created_at", "updated_at") SELECT "id", "email", "display_name", "password_hash", 'flyer', 'SA', "is_active", "created_at", "updated_at" FROM `users`;--> statement-breakpoint
-DROP TABLE `users`;--> statement-breakpoint
-ALTER TABLE `__new_users` RENAME TO `users`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
-CREATE UNIQUE INDEX `uq_users_email` ON `users` (`email`);
+ALTER TABLE `users` ADD `role` text DEFAULT 'flyer' NOT NULL;--> statement-breakpoint
+ALTER TABLE `users` ADD `regulatory_region` text DEFAULT 'SA' NOT NULL;

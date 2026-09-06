@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "75f02e3e-c798-4484-93e5-fde0117f1b3e",
+  "id": "79579e85-a541-4832-8af1-2a50e21f3cb8",
   "prevId": "fb1c675a-50d8-49e4-98eb-ecb717a80b8f",
   "tables": {
     "certifications": {
@@ -2210,12 +2210,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {
-        "ck_users_role": {
-          "name": "ck_users_role",
-          "value": "\"role\" IS NULL OR \"role\" IN ('admin', 'flyer')"
-        }
-      }
+      "checkConstraints": {}
     }
   },
   "views": {},

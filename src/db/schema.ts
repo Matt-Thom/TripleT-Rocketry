@@ -141,7 +141,6 @@ export const users = sqliteTable(
   },
   (t) => [
     uniqueIndex('uq_users_email').on(t.email),
-    enumCheck('ck_users_role', t.role, USER_ROLE),
   ],
 )
 
