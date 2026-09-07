@@ -4,17 +4,15 @@
 
 import { html } from 'hono/html'
 import type { HtmlEscapedString } from 'hono/utils/html'
-import type { ActiveFlyer } from '../db/context'
 
 interface LoginViewOptions {
   redirectUrl?: string
   error?: string | null
-  pilots?: ActiveFlyer[]
-  quickSignInEnabled?: boolean
 }
 
+
 export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { redirectUrl = '/', error = null, pilots = [], quickSignInEnabled = true } = options
+  const { redirectUrl = '/', error = null } = options
   const safeRedirect = redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/'
 
   return html`
@@ -51,7 +49,7 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
               name="email"
               required
               autofocus
-              placeholder="pilot@rocketry.local"
+              placeholder="pilot@rocketry.org.au"
               class="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             >
           </div>
@@ -171,52 +169,6 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
             }
           });
         </script>
-
-        <!-- Quick Switch / Demo Pilots Section -->
-        ${
-          quickSignInEnabled && pilots.length > 0
-            ? html`
-              <div class="mt-8 pt-6 border-t border-slate-800">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 text-center">
-                  🇦🇺 Quick Sign-In (Australian Pilots)
-                </h3>
-                <div class="space-y-2">
-                  ${pilots.map(
-                    (p) => html`
-                      <form method="POST" action="/login">
-                        <input type="hidden" name="redirect" value="${safeRedirect}">
-                        <input type="hidden" name="email" value="${p.email}">
-                        <input type="hidden" name="password" value="rocketry123!">
-                        <button
-                          type="submit"
-                          class="w-full text-left p-3 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-brand-500/50 transition-all flex items-center justify-between group"
-                        >
-                          <div class="flex items-center gap-3">
-                            <span class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-brand-400 border border-slate-700">
-                              ${p.displayName.charAt(0)}
-                            </span>
-                            <div>
-                              <div class="text-sm font-semibold text-slate-200 group-hover:text-white flex items-center gap-2">
-                                <span>${p.displayName}</span>
-                                <span class="text-xs px-1.5 py-0.5 rounded bg-brand-950 text-brand-300 border border-brand-800/80 font-mono">
-                                  L${p.maxCertLevel} ${p.certifyingBody || 'TRA'}
-                                </span>
-                              </div>
-                              <div class="text-xs text-slate-400 font-mono">${p.email}</div>
-                            </div>
-                          </div>
-                          <span class="text-xs text-brand-400 group-hover:translate-x-0.5 transition-transform font-bold">
-                            Select &rarr;
-                          </span>
-                        </button>
-                      </form>
-                    `,
-                  )}
-                </div>
-              </div>
-            `
-            : ''
-        }
 
         <div class="mt-6 pt-4 border-t border-slate-800 text-center">
           <p class="text-xs text-slate-400">

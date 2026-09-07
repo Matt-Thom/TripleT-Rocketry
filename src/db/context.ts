@@ -7,7 +7,7 @@
  * data isolation are satisfied across all rocketry workflows.
  */
 
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import * as schema from './schema'
 import { hashPassword } from '../services/auth'
@@ -86,63 +86,28 @@ export async function getActiveFlyer(
 }
 
 /**
- * Ensure Australian demo pilots are available for multi-user switching.
+ * Remove legacy Australian demo pilots if present in D1.
+ * Demo pilots are no longer auto-seeded.
+ */
+export async function cleanupDemoPilots(db: DrizzleD1Database<any>): Promise<void> {
+  const demoEmails = ['sarah@rocketry.org.au', 'woomera.rso@rocketry.org.au']
+  const demoUsers = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(inArray(schema.users.email, demoEmails))
+
+  if (demoUsers.length > 0) {
+    const ids = demoUsers.map((u) => u.id)
+    await db.delete(schema.certifications).where(inArray(schema.certifications.userId, ids))
+    await db.delete(schema.users).where(inArray(schema.users.id, ids))
+  }
+}
+
+/**
+ * Backward compatibility alias: no longer seeds demo pilots, cleans them up instead.
  */
 export async function ensureDemoPilots(db: DrizzleD1Database<any>): Promise<void> {
-  // First ensure primary flyer exists
-  await getActiveFlyer(db)
-
-  const defaultPasswordHash = await hashPassword('rocketry123!')
-
-  // Sarah Connor (TRA/ARA Level 1 - NSW)
-  const [sarah] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.email, 'sarah@rocketry.org.au'))
-  if (!sarah) {
-    const [pilot2] = await db
-      .insert(schema.users)
-      .values({
-        email: 'sarah@rocketry.org.au',
-        displayName: 'Sarah Connor',
-        passwordHash: defaultPasswordHash,
-        isActive: true,
-      })
-      .returning()
-
-    await db.insert(schema.certifications).values({
-      userId: pilot2.id,
-      certifyingBody: 'TRA',
-      level: 1,
-      certNumber: 'ARA-NSW-512',
-      expiresOn: '2027-06-30',
-    })
-  }
-
-  // Bruce Harrison (TRA Level 3 RSO - Woomera SA)
-  const [bruce] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.email, 'woomera.rso@rocketry.org.au'))
-  if (!bruce) {
-    const [pilot3] = await db
-      .insert(schema.users)
-      .values({
-        email: 'woomera.rso@rocketry.org.au',
-        displayName: 'Bruce Harrison (RSO)',
-        passwordHash: defaultPasswordHash,
-        isActive: true,
-      })
-      .returning()
-
-    await db.insert(schema.certifications).values({
-      userId: pilot3.id,
-      certifyingBody: 'TRA',
-      level: 3,
-      certNumber: 'TRA-AU-9081',
-      expiresOn: '2029-12-31',
-    })
-  }
+  await cleanupDemoPilots(db)
 }
 
 /**
@@ -195,37 +160,79 @@ async function buildFlyerContext(
  * Auto-seed realistic Australian launch sites if none exist in D1.
  */
 export async function ensureAustralianLaunchSites(db: DrizzleD1Database<any>): Promise<void> {
-  const existingSites = await db.select().from(schema.launchSites).limit(1)
-  if (existingSites.length > 0) return
+  const existingSites = await db.select().from(schema.launchSites)
 
-  await db.insert(schema.launchSites).values([
-    {
-      name: 'Lake Hart / Woomera Launch Range, SA',
-      latitude: -31.154,
-      longitude: 136.528,
-      maxAltitudeAglM: 30000,
-      notes: 'Historic Woomera Prohibited Area range. Hosts national high-power rocketry gatherings with high-altitude CASA airspace instrument.',
-    },
-    {
-      name: 'Whalan Reserve, NSW',
-      latitude: -33.766,
-      longitude: 150.803,
-      maxAltitudeAglM: 450,
-      notes: 'NSW Rocketry Association (NSWRA) sport launch field in Western Sydney. Low and mid-power sport launches.',
-    },
-    {
-      name: 'Serpentine Launch Field, WA',
-      latitude: -32.3615,
-      longitude: 115.978,
-      maxAltitudeAglM: 3048,
-      notes: 'Tripoli Western Australia (TRA WA) monthly club launch field south of Perth.',
-    },
-    {
-      name: 'Lake Tyrrell, VIC',
-      latitude: -35.312,
-      longitude: 142.796,
-      maxAltitudeAglM: 12000,
-      notes: 'Tripoli Victoria high-power dry salt lake launch facility near Sea Lake. CASA ceiling 40,000 ft AGL.',
-    },
-  ])
+  if (existingSites.length === 0) {
+    await db.insert(schema.launchSites).values([
+      {
+        name: 'Lake Hart / Woomera Launch Range, SA',
+        latitude: -31.154,
+        longitude: 136.528,
+        maxAltitudeAglM: 30000,
+        notes: 'Historic Woomera Prohibited Area range. Hosts national high-power rocketry gatherings with high-altitude CASA airspace instrument.',
+      },
+      {
+        name: 'Whalan Reserve, NSW',
+        latitude: -33.766,
+        longitude: 150.803,
+        maxAltitudeAglM: 450,
+        notes: 'NSW Rocketry Association (NSWRA) sport launch field in Western Sydney. Low and mid-power sport launches.',
+      },
+      {
+        name: 'SARC Blanchetown, SA',
+        latitude: -34.2565,
+        longitude: 139.5995,
+        maxAltitudeAglM: 2100,
+        notes: 'Southern Australian Rocketry Club (SARC) launch site near Blanchetown, South Australia. CASA flight ceiling 2,100 m AGL.',
+      },
+      {
+        name: 'VRA Serpentine, VIC',
+        latitude: -36.484,
+        longitude: 144.0038,
+        maxAltitudeAglM: 3048,
+        notes: 'Victorian Rocketry Association (VRA) launch site located at Serpentine, Victoria. CASA flight ceiling 3,048 m AGL (10,000 ft).',
+      },
+      {
+        name: 'Lake Tyrrell, VIC',
+        latitude: -35.312,
+        longitude: 142.796,
+        maxAltitudeAglM: 12000,
+        notes: 'Tripoli Victoria high-power dry salt lake launch facility near Sea Lake. CASA ceiling 40,000 ft AGL.',
+      },
+    ])
+    return
+  }
+
+  // Ensure SARC Blanchetown is present if database was previously initialized
+  const hasBlanchetown = existingSites.some(
+    (s) => s.name.toLowerCase().includes('blanchetown') || s.name.toLowerCase().includes('sarc')
+  )
+  if (!hasBlanchetown) {
+    await db.insert(schema.launchSites).values({
+      name: 'SARC Blanchetown, SA',
+      latitude: -34.2565,
+      longitude: 139.5995,
+      maxAltitudeAglM: 2100,
+      notes: 'Southern Australian Rocketry Club (SARC) launch site near Blanchetown, South Australia. CASA flight ceiling 2,100 m AGL.',
+    })
+  }
+
+  // Ensure VRA Serpentine site is in Victoria with correct coordinates
+  for (const site of existingSites) {
+    if (
+      site.name.includes('Serpentine') &&
+      (site.name.includes('WA') || site.latitude === -32.3615 || !site.name.includes('VRA'))
+    ) {
+      await db
+        .update(schema.launchSites)
+        .set({
+          name: 'VRA Serpentine, VIC',
+          latitude: -36.484,
+          longitude: 144.0038,
+          notes: 'Victorian Rocketry Association (VRA) launch site located at Serpentine, Victoria. CASA flight ceiling 3,048 m AGL (10,000 ft).',
+          updatedAt: Date.now(),
+        })
+        .where(eq(schema.launchSites.id, site.id))
+    }
+  }
 }

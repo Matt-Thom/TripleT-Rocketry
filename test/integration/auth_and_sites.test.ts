@@ -288,7 +288,7 @@ describe('Requirement 2: Launch Sites Editable Workflows', () => {
   })
 
   it('site detail view includes "Edit Site" link', async () => {
-    const site = await seedTestSite({ name: 'Serpentine Field WA' })
+    const site = await seedTestSite({ name: 'VRA Serpentine VIC' })
     const res = await fetchGet(`/sites/${site.id}`)
     assertHtmlResponse(res, 200)
     const html = await res.text()
@@ -319,13 +319,46 @@ describe('Requirement 3: Australian Example Data & Terminology', () => {
     expect(html).not.toContain('FAA Waiver Ceiling')
   })
 
-  it('renders login page with Australian demo pilots available for quick switch', async () => {
+  it('does not seed demo pilots and renders clean login page without demo quick-switchers', async () => {
     const res = await fetchGet('/login')
     assertHtmlResponse(res, 200)
     const html = await res.text()
-    expect(html).toContain('Quick Sign-In (Australian Pilots)')
-    expect(html).toContain('TripleT Pilot')
-    expect(html).toContain('Sarah Connor')
-    expect(html).toContain('Bruce Harrison (RSO)')
+    expect(html).not.toContain('Quick Sign-In (Australian Pilots)')
+    expect(html).not.toContain('Sarah Connor')
+    expect(html).not.toContain('Bruce Harrison')
+
+    const db = getDb()
+    const users = await db.select().from(schema.users)
+    const demoEmails = users.map((u) => u.email)
+    expect(demoEmails).not.toContain('sarah@rocketry.org.au')
+    expect(demoEmails).not.toContain('woomera.rso@rocketry.org.au')
+  })
+
+  it('auto-seeds SARC Blanchetown (SA, 2100m) and VRA Serpentine in Victoria', async () => {
+    const res = await fetchGet('/sites')
+    assertHtmlResponse(res, 200)
+    const html = await res.text()
+    expect(html).toContain('SARC Blanchetown')
+    expect(html).toContain('VRA Serpentine')
+    expect(html).not.toContain('Serpentine Launch Field, WA')
+
+    const db = getDb()
+    const allSites = await db.select().from(schema.launchSites)
+
+    // Verify SARC Blanchetown (34.2565° S, 139.5995°, 2100m)
+    const blanchetown = allSites.find((s) => s.name.includes('Blanchetown'))
+    expect(blanchetown).toBeDefined()
+    expect(blanchetown!.latitude).toBeCloseTo(-34.2565)
+    expect(blanchetown!.longitude).toBeCloseTo(139.5995)
+    expect(blanchetown!.maxAltitudeAglM).toBe(2100)
+
+    // Verify VRA site is in Victoria at 36.4840° S, 144.0038°
+    const vra = allSites.find((s) => s.name.includes('VRA') || s.name.includes('Serpentine'))
+    expect(vra).toBeDefined()
+    expect(vra!.name).toContain('VIC')
+    expect(vra!.latitude).toBeCloseTo(-36.484)
+    expect(vra!.longitude).toBeCloseTo(144.0038)
+    expect(vra!.notes).toContain('Victoria')
+    expect(vra!.notes).not.toContain('Western Australia')
   })
 })

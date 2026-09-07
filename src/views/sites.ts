@@ -342,7 +342,7 @@ export function newSiteFormView(user?: ActiveFlyer | null): HtmlEscapedString | 
               id="name"
               name="name"
               required
-              placeholder="e.g. Lake Hart, Woomera SA or Serpentine Field, WA"
+              placeholder="e.g. Lake Hart, Woomera SA, SARC Blanchetown SA, or VRA Serpentine VIC"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
             />
           </div>
@@ -480,7 +480,7 @@ export function editSiteFormView(site: LaunchSite, user?: ActiveFlyer | null): H
               name="name"
               required
               value="${site.name}"
-              placeholder="e.g. Lake Hart, Woomera SA or Serpentine Field, WA"
+              placeholder="e.g. Lake Hart, Woomera SA, SARC Blanchetown SA, or VRA Serpentine VIC"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
             />
           </div>

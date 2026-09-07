@@ -7,7 +7,7 @@ import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer, getAllFlyers, ensureDemoPilots, type ActiveFlyer } from '../db/context'
+import { getActiveFlyer, getAllFlyers, cleanupDemoPilots, type ActiveFlyer } from '../db/context'
 import {
   hashPassword,
   verifyPassword,
@@ -29,6 +29,7 @@ type Bindings = {
 export const authRouter = new Hono<{ Bindings: Bindings }>()
 
 /**
+<<<<<<< HEAD
  * Convert a base64url or base64 string to a Uint8Array.
  */
 function base64UrlToUint8Array(base64url: string): Uint8Array {
@@ -129,37 +130,19 @@ function generateWebAuthnChallenge(): string {
 }
 
 /**
- * GET /login - Render login form with optional Australian demo pilot quick-switchers.
+ * GET /login - Render clean login form.
  */
 authRouter.get('/login', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const isTest = c.env.ENVIRONMENT === 'test' || Boolean((c.env as any)?.TEST_MIGRATIONS)
 
-  // In test environment, ensure Australian demo pilots are populated for existing test suites
-  if (isTest) {
-    await ensureDemoPilots(db).catch(() => {})
-  }
-
-  // Check if quick sign in is enabled in site settings
-  const [quickSignInSetting] = await db
-    .select()
-    .from(schema.siteSettings)
-    .where(eq(schema.siteSettings.key, 'quick_sign_in_enabled'))
-    .limit(1)
-    .catch(() => [])
-
-  const quickSignInEnabled = quickSignInSetting ? quickSignInSetting.value !== 'false' : true
-
-  let pilots: ActiveFlyer[] = []
-  if (quickSignInEnabled) {
-    pilots = await getAllFlyers(db).catch(() => [])
-  }
+  // Clean up any legacy demo pilots from D1
+  await cleanupDemoPilots(db).catch(() => {})
 
   const rawRedirect = c.req.query('redirect') || '/'
   const redirectUrl = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
   const error = c.req.query('error') || null
 
-  const view = loginView({ redirectUrl, error, pilots, quickSignInEnabled })
+  const view = loginView({ redirectUrl, error })
   const html = pageLayout({
     title: 'Sign In',
     activeTab: 'dashboard',
