@@ -9,8 +9,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import * as schema from '../../src/db/schema'
 import {
   getDb,
+  seedTestConfig,
+  seedTestFlight,
   seedTestInventory,
   seedTestMotor,
+  seedTestRocket,
   seedTestUser,
   truncateDb,
 } from '../helpers/db'
@@ -289,6 +292,125 @@ describe('Motor Catalog & Inventory Workflows (Milestone 3)', () => {
 
       expect(updated.quantityOnHand).toBe(0) // Clamped to 0
       expect(updated.expendedCount).toBe(5)
+    })
+  })
+
+  describe('Tier 6: Reload Motor Casings & Hardware Tracking (R3)', () => {
+    it('displays required casing/hardware in motor catalog detail view banner and physical specs card', async () => {
+      const motor = await seedTestMotor({
+        manufacturer: 'AeroTech',
+        model: 'RMS-29/40-120-E16',
+        impulseClass: 'E',
+        hardware: 'RMS-29/40-120',
+        casingReusable: true,
+      })
+
+      const res = await fetchGet(`/motors/${motor.id}`)
+      expect(res.status).toBe(200)
+      const html = await res.text()
+
+      // Prominently in header banner
+      assertContains(html, 'Required Casing / Hardware:', 'RMS-29/40-120')
+      // In Physical Specifications card
+      assertContains(html, 'Required Casing / Hardware', 'RMS-29/40-120')
+    })
+
+    it('falls back to Reloadable Casing when motor is reloadable but hardware is unspecified', async () => {
+      const motor = await seedTestMotor({
+        manufacturer: 'Cesaroni',
+        model: 'Pro29-Generic',
+        impulseClass: 'G',
+        hardware: null,
+        casingReusable: true,
+      })
+
+      const res = await fetchGet(`/motors/${motor.id}`)
+      expect(res.status).toBe(200)
+      const html = await res.text()
+
+      assertContains(html, 'Reloadable Casing')
+    })
+
+    it('displays required casing on motor inventory cards in /inventory', async () => {
+      const user = await seedTestUser({ displayName: 'Hardware Master' })
+      const motor = await seedTestMotor({
+        manufacturer: 'Cesaroni',
+        model: 'Pro38-3G-H153',
+        impulseClass: 'H',
+        hardware: 'Pro38 3G',
+        casingReusable: true,
+      })
+      await seedTestInventory(user.id, motor.id, {
+        quantityOnHand: 2,
+      })
+
+      const res = await fetchGet('/inventory')
+      expect(res.status).toBe(200)
+      const html = await res.text()
+
+      assertContains(html, 'Casing:', 'Pro38 3G')
+    })
+
+    it('displays required casing in Card 3 Propulsion Metrics on flight detail view', async () => {
+      const user = await seedTestUser({ displayName: 'Flight Officer' })
+      const rocket = await seedTestRocket(user.id, { name: 'Hardware Explorer' })
+      const config = await seedTestConfig(rocket.id, { version: 1 })
+      const motor = await seedTestMotor({
+        manufacturer: 'AeroTech',
+        model: 'RMS-38/720-J350',
+        impulseClass: 'J',
+        hardware: 'RMS-38/720',
+        casingReusable: true,
+      })
+
+      const flight = await seedTestFlight(user.id, {
+        rocketConfigurationId: config.id,
+        motorId: motor.id,
+        flightNumber: 101,
+      })
+
+      const res = await fetchGet(`/flights/${flight.id}`)
+      expect(res.status).toBe(200)
+      const html = await res.text()
+
+      assertContains(html, 'Propulsion Metrics')
+      assertContains(html, 'Required Casing / Hardware', 'RMS-38/720')
+    })
+
+    it('allows searching catalog by casing name in backend query and frontend data-search', async () => {
+      await seedTestMotor({
+        manufacturer: 'AeroTech',
+        model: 'E16W-4',
+        impulseClass: 'E',
+        hardware: 'RMS-29/40-120',
+        casingReusable: true,
+      })
+      await seedTestMotor({
+        manufacturer: 'AeroTech',
+        model: 'G64W-4',
+        impulseClass: 'G',
+        hardware: 'RMS-29/40-120',
+        casingReusable: true,
+      })
+      await seedTestMotor({
+        manufacturer: 'Cesaroni',
+        model: 'H120',
+        impulseClass: 'H',
+        hardware: 'Pro38 3G',
+        casingReusable: true,
+      })
+
+      // Backend search query for "RMS-29/40-120"
+      const res = await fetchGet('/motors?search=RMS-29/40-120')
+      expect(res.status).toBe(200)
+      const html = await res.text()
+
+      assertContains(html, 'E16W-4', 'G64W-4', 'RMS-29/40-120')
+      assertNotContains(html, 'H120')
+
+      // Check frontend data-search attribute contains the hardware casing
+      expect(html).toContain('data-search=')
+      expect(html.toLowerCase()).toContain('rms-29/40-120')
     })
   })
 })

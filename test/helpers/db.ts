@@ -234,6 +234,7 @@ export async function seedTestFlight(
       flightNumber: overrides.flightNumber ?? 1,
       flownAt: overrides.flownAt ?? Date.now(),
       outcome: overrides.outcome ?? 'successful',
+      logType: overrides.logType ?? 'actual',
       softGateWarnings: overrides.softGateWarnings ?? [],
       proceededDespiteWarnings: overrides.proceededDespiteWarnings ?? false,
       ...overrides,

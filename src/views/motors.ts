@@ -236,7 +236,7 @@ export function motorCatalogView(
                     const stock = getStockCount(motor.id, userInventoryMap)
                     const classBadge = getImpulseClassBadgeClasses(motor.impulseClass)
                     const prop = formatPropellantType(motor.propellantType)
-                    const searchData = `${motor.manufacturer} ${motor.model} ${motor.impulseClass || ''} ${motor.delayS ?? ''} ${prop.label}`.toLowerCase()
+                    const searchData = `${motor.manufacturer} ${motor.model} ${motor.impulseClass || ''} ${motor.delayS ?? ''} ${prop.label} ${motor.hardware || ''}`.toLowerCase()
 
                     return html`
                       <tr
@@ -249,9 +249,11 @@ export function motorCatalogView(
                               ${motor.manufacturer} <span class="text-brand-300 font-mono">${motor.model}</span>
                             </a>
                           </div>
-                          ${motor.casingReusable
-                            ? html`<span class="text-[11px] text-sky-400 font-medium">Reloadable</span>`
-                            : html`<span class="text-[11px] text-slate-400 font-medium">Single-Use</span>`}
+                          ${motor.hardware
+                            ? html`<div class="text-xs text-slate-400">Casing: <span class="text-slate-200 font-mono">${motor.hardware}</span></div>`
+                            : (motor.casingReusable
+                              ? html`<span class="text-[11px] text-sky-400 font-medium">Reloadable</span>`
+                              : html`<span class="text-[11px] text-slate-400 font-medium">Single-Use</span>`)}
                         </td>
                         <td class="whitespace-nowrap px-3 py-3.5">
                           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${classBadge}">
@@ -378,9 +380,11 @@ export function motorDetailView(
               <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${prop.badgeClasses}">
                 ${prop.label}
               </span>
-              ${motor.casingReusable
-                ? html`<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-sky-950/80 text-sky-300 border border-sky-800/60">Reloadable Casing</span>`
-                : html`<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">Single-Use</span>`}
+              ${motor.hardware
+                ? html`<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-sky-950/80 text-sky-300 border border-sky-700/80 shadow-sm">Required Casing / Hardware: ${motor.hardware}</span>`
+                : (motor.casingReusable
+                  ? html`<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-sky-950/80 text-sky-300 border border-sky-800/60">Reloadable Casing</span>`
+                  : html`<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">Single-Use</span>`)}
             </div>
             <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
               ${motor.manufacturer} <span class="text-brand-400">${motor.model}</span>
@@ -472,6 +476,12 @@ export function motorDetailView(
               <dt class="text-slate-400">Total Mass / Weight</dt>
               <dd class="font-mono font-semibold text-white">
                 ${motor.weightG != null ? motor.weightG.toFixed(1) + ' g' : '—'}
+              </dd>
+            </div>
+            <div class="py-2.5 flex justify-between">
+              <dt class="text-slate-400">Required Casing / Hardware</dt>
+              <dd class="font-mono font-bold text-white">
+                ${motor.hardware || (motor.casingReusable ? 'Reloadable Casing' : 'Single-Use')}
               </dd>
             </div>
             <div class="py-2.5 flex justify-between">
@@ -630,6 +640,9 @@ export function inventoryRowFragment(item: InventoryItemWithMotor): HtmlEscapedS
           <a href="/motors/${item.motorId}" class="hover:text-brand-400 transition-colors">
             ${motor.manufacturer || 'Unknown'} <span class="text-brand-300 font-mono">${motor.model || item.motorId}</span>
           </a>
+        </div>
+        <div class="text-xs text-slate-400">
+          Casing: <span class="text-slate-200">${motor.hardware || (motor.casingReusable ? 'Reloadable' : 'Single-Use')}</span>
         </div>
         <div class="text-xs text-slate-400">
           ${motor.diameterMm ? `${motor.diameterMm}mm` : ''}

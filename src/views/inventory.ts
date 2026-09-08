@@ -294,6 +294,9 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                     </a>
                                   </div>
                                   <div class="text-xs text-slate-400">
+                                    Casing: <span class="text-slate-200">${motor.hardware || (motor.casingReusable ? 'Reloadable' : 'Single-Use')}</span>
+                                  </div>
+                                  <div class="text-xs text-slate-400">
                                     ${motor.diameterMm ? `${motor.diameterMm}mm` : ''}
                                     ${motor.propellantType ? ` • ${motor.propellantType.toUpperCase()}` : ''}
                                     ${motor.weightG ? ` • Propellant: ${motor.weightG}g` : ''}

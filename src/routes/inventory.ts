@@ -100,6 +100,7 @@ export async function listInventoryHandler(c: any) {
         diameterMm: schema.motors.diameterMm,
         propellantType: schema.motors.propellantType,
         casingReusable: schema.motors.casingReusable,
+        hardware: schema.motors.hardware,
         weightG: schema.motors.weightG,
         propellantWeightG: schema.motors.propellantWeightG,
       },

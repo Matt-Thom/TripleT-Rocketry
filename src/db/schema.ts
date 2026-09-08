@@ -50,6 +50,9 @@ export const FLIGHT_OUTCOME = [
   'tree', 'powerline', 'lost', 'other',
 ] as const
 
+export const FLIGHT_LOG_TYPE = ['preflight', 'actual'] as const;
+export type FlightLogType = (typeof FLIGHT_LOG_TYPE)[number];
+
 export const COMPONENT_CATEGORY = [
   'motor', 'casing', 'recovery', 'avionics',
   'pyrotechnic', 'airframe', 'hardware', 'payload', 'other',
@@ -376,6 +379,7 @@ export const flights = sqliteTable(
     launchEventId: text('launch_event_id').references(() => launchEvents.id),
     flightNumber: integer('flight_number'),
     flownAt: integer('flown_at'),
+    logType: text('log_type').notNull().default('actual'),
     altitudeAglM: real('altitude_agl_m'),
     altitudeMslM: real('altitude_msl_m'),
     maxVelocityMps: real('max_velocity_mps'),

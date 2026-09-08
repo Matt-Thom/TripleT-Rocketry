@@ -757,7 +757,7 @@ describe('M3 Challenger 2: Flight-Level Duty Officers & Rotation (Adversarial Ve
       assertHasFormField(html, 'lco_name')
       expect(html).toContain('value="Chief Officer Hawkins"')
       expect(html).toContain('value="Pad Specialist Byers"')
-      expect(html).toContain(`value="${officer.id}" selected`)
+      expect(html).toContain('id="rso_name"')
     })
 
     it('4.3: Editing duty officers via POST /flights/:id/edit preserves motor inventory quantity without double decrement', async () => {

@@ -61,11 +61,155 @@ function formatOutcomeBadge(outcome: string | null | undefined) {
 }
 
 /**
- * List of launch meets/events showing event name, host launch site,
- * date range (starts_on to ends_on), designated RSO and LCO, pad count,
- * weather notes, and "+ Add Launch Event" button.
+ * Format event status badge (Upcoming, Active Today, Past Meet).
  */
-export function eventsListView(events: EventWithSite[], user?: any): HtmlEscapedString | Promise<HtmlEscapedString> {
+function getEventStatusBadge(startsOn?: string | null, endsOn?: string | null) {
+  const today = new Date().toISOString().slice(0, 10)
+  if (!startsOn && !endsOn) {
+    return html`<span class="px-2 py-0.5 rounded text-xs font-semibold bg-sky-950/80 text-sky-300 border border-sky-700/60">Upcoming</span>`
+  }
+  const effectiveEnd = endsOn || startsOn
+  if (effectiveEnd && effectiveEnd < today) {
+    return html`<span class="px-2 py-0.5 rounded text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">Past Meet</span>`
+  }
+  const isActive = startsOn && endsOn
+    ? (startsOn <= today && endsOn >= today)
+    : (startsOn === today)
+  if (isActive) {
+    return html`<span class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-700/60">Active Today</span>`
+  }
+  return html`<span class="px-2 py-0.5 rounded text-xs font-semibold bg-sky-950/80 text-sky-300 border border-sky-700/60">Upcoming</span>`
+}
+
+/**
+ * Render individual event card with status badge, details, and actions.
+ */
+function renderEventCard(evt: EventWithSite) {
+  return html`
+    <div class="bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all shadow-sm">
+      <div>
+        <div class="flex items-start justify-between gap-2">
+          <h2 class="text-lg font-bold text-white hover:text-brand-400 transition-colors">
+            <a href="/events/${evt.id}">${evt.name}</a>
+          </h2>
+          <div class="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+            ${getEventStatusBadge(evt.startsOn, evt.endsOn)}
+            ${evt.padCount != null
+              ? html`<span class="px-2 py-0.5 bg-slate-800 text-slate-300 text-xs rounded font-medium border border-slate-700">${evt.padCount} Pads</span>`
+              : ''}
+          </div>
+        </div>
+
+        <div class="mt-2 text-xs text-slate-300 flex items-center gap-1.5">
+          <span class="text-slate-500">Dates:</span>
+          ${formatDateRange(evt.startsOn, evt.endsOn)}
+        </div>
+
+        ${evt.site
+          ? html`
+              <div class="mt-1.5 text-xs text-slate-400 flex items-center gap-1">
+                <span>📍</span>
+                <a href="/sites/${evt.site.id}" class="text-slate-300 hover:text-white underline">
+                  ${evt.site.name}
+                </a>
+              </div>
+            `
+          : ''}
+
+        <!-- Officers & Leadership Badges -->
+        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+          ${evt.launchDirector
+            ? html`<span class="px-2 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/60 font-medium">Director: ${evt.launchDirector}</span>`
+            : ''}
+          ${evt.tripoliPrefect
+            ? html`<span class="px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/60 font-medium">Prefect: ${evt.tripoliPrefect}</span>`
+            : ''}
+          ${evt.rsoName
+            ? html`<span class="px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/60 font-medium">RSO: ${evt.rsoName}</span>`
+            : ''}
+          ${evt.lcoName
+            ? html`<span class="px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/60 font-medium">LCO: ${evt.lcoName}</span>`
+            : ''}
+        </div>
+
+        ${evt.weatherNotes
+          ? html`
+              <p class="text-xs text-slate-400 mt-3 line-clamp-2 bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/80">
+                ⛅ ${evt.weatherNotes}
+              </p>
+            `
+          : ''}
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+        <div class="flex items-center gap-3">
+          <a
+            href="/flights/new?launch_event_id=${evt.id}&launch_site_id=${evt.launchSiteId}"
+            class="text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            + Log Flight
+          </a>
+          <a
+            href="/events/${evt.id}/edit"
+            class="text-slate-400 hover:text-brand-300 transition-colors flex items-center gap-1"
+            title="Edit Event"
+          >
+            <span>✏️</span> Edit Event
+          </a>
+        </div>
+        <a
+          href="/events/${evt.id}"
+          class="text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1"
+        >
+          View Event Log &rarr;
+        </a>
+      </div>
+    </div>
+  `
+}
+
+/**
+ * List of launch meets/events partitioned into Upcoming and Past Launches,
+ * with top-level filter tabs (Upcoming, Past Meets / Archive, All) and clear status badges.
+ */
+export function eventsListView(
+  events: EventWithSite[],
+  user?: any,
+  activeTab: string = 'all',
+): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const today = new Date().toISOString().slice(0, 10)
+
+  const isPastEvent = (evt: EventWithSite) => {
+    const effectiveEnd = evt.endsOn || evt.startsOn
+    return effectiveEnd ? effectiveEnd < today : false
+  }
+
+  // Upcoming: not past (includes active today, future dates, and date TBD)
+  // Sorted ascending by startsOn (nulls last)
+  const upcomingEvents = events
+    .filter((e) => !isPastEvent(e))
+    .sort((a, b) => {
+      const aDate = a.startsOn || '9999-99-99'
+      const bDate = b.startsOn || '9999-99-99'
+      if (aDate !== bDate) return aDate.localeCompare(bDate)
+      return a.name.localeCompare(b.name)
+    })
+
+  // Past: effective end date < today
+  // Sorted descending by startsOn
+  const pastEvents = events
+    .filter((e) => isPastEvent(e))
+    .sort((a, b) => {
+      const aDate = a.startsOn || ''
+      const bDate = b.startsOn || ''
+      if (aDate !== bDate) return bDate.localeCompare(aDate)
+      return a.name.localeCompare(b.name)
+    })
+
+  const tab = activeTab || 'all'
+  const showUpcoming = tab === 'all' || tab === 'upcoming'
+  const showPast = tab === 'all' || tab === 'past'
+
   const content = html`
     <div class="space-y-6">
       <!-- Header with Action -->
@@ -87,7 +231,29 @@ export function eventsListView(events: EventWithSite[], user?: any): HtmlEscaped
         </a>
       </div>
 
-      <!-- Events Grid / List -->
+      <!-- Tab Navigation / Filter -->
+      <div class="flex items-center gap-2 border-b border-slate-800 pb-3 flex-wrap">
+        <a
+          href="/events?tab=all"
+          class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === 'all' ? 'bg-brand-500 text-slate-950 shadow-sm' : 'bg-slate-850 text-slate-300 hover:text-white border border-slate-800'}"
+        >
+          All Launches (${events.length})
+        </a>
+        <a
+          href="/events?tab=upcoming"
+          class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === 'upcoming' ? 'bg-brand-500 text-slate-950 shadow-sm' : 'bg-slate-850 text-slate-300 hover:text-white border border-slate-800'}"
+        >
+          Upcoming (${upcomingEvents.length})
+        </a>
+        <a
+          href="/events?tab=past"
+          class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === 'past' ? 'bg-brand-500 text-slate-950 shadow-sm' : 'bg-slate-850 text-slate-300 hover:text-white border border-slate-800'}"
+        >
+          Past Meets / Archive (${pastEvents.length})
+        </a>
+      </div>
+
+      <!-- Events Listing -->
       ${events.length === 0
         ? html`
             <div class="bg-slate-850 border border-slate-800 rounded-xl p-12 text-center">
@@ -107,78 +273,70 @@ export function eventsListView(events: EventWithSite[], user?: any): HtmlEscaped
             </div>
           `
         : html`
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              ${events.map(
-                (evt) => html`
-                  <div class="bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all shadow-sm">
-                    <div>
-                      <div class="flex items-start justify-between gap-2">
-                        <h2 class="text-lg font-bold text-white hover:text-brand-400 transition-colors">
-                          <a href="/events/${evt.id}">${evt.name}</a>
-                        </h2>
-                        ${evt.padCount != null
-                          ? html`<span class="px-2 py-0.5 bg-slate-800 text-slate-300 text-xs rounded font-medium border border-slate-700">${evt.padCount} Pads</span>`
-                          : ''}
+            <div class="space-y-8">
+              ${showUpcoming
+                ? html`
+                    <section class="space-y-4">
+                      <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div>
+                          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <span>🚀</span> Upcoming Launches
+                            <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800/60 font-semibold">${upcomingEvents.length}</span>
+                          </h2>
+                          <p class="text-xs text-slate-400 mt-0.5">Scheduled range dates and active launch operations.</p>
+                        </div>
+                        <a
+                          href="/events/new"
+                          class="text-xs text-brand-400 hover:text-brand-300 font-medium inline-flex items-center gap-1"
+                        >
+                          + Schedule Event &rarr;
+                        </a>
                       </div>
 
-                      <div class="mt-2 text-xs text-slate-300 flex items-center gap-1.5">
-                        <span class="text-slate-500">Dates:</span>
-                        ${formatDateRange(evt.startsOn, evt.endsOn)}
-                      </div>
-
-                      ${evt.site
+                      ${upcomingEvents.length === 0
                         ? html`
-                            <div class="mt-1.5 text-xs text-slate-400 flex items-center gap-1">
-                              <span>📍</span>
-                              <a href="/sites/${evt.site.id}" class="text-slate-300 hover:text-white underline">
-                                ${evt.site.name}
-                              </a>
+                            <div class="bg-slate-850/60 border border-slate-800 rounded-xl p-6 text-center text-sm text-slate-400">
+                              No upcoming launches scheduled. Click
+                              <a href="/events/new" class="text-brand-400 hover:underline font-semibold">+ Schedule Event</a>
+                              to organize a meet.
                             </div>
                           `
-                        : ''}
+                        : html`
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                              ${upcomingEvents.map(renderEventCard)}
+                            </div>
+                          `}
+                    </section>
+                  `
+                : ''}
 
-                      <!-- Officers & Leadership Badges -->
-                      <div class="mt-3 flex flex-wrap gap-2 text-xs">
-                        ${evt.launchDirector
-                          ? html`<span class="px-2 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/60 font-medium">Director: ${evt.launchDirector}</span>`
-                          : ''}
-                        ${evt.tripoliPrefect
-                          ? html`<span class="px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/60 font-medium">Prefect: ${evt.tripoliPrefect}</span>`
-                          : ''}
-                        ${evt.rsoName
-                          ? html`<span class="px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/60 font-medium">RSO: ${evt.rsoName}</span>`
-                          : ''}
-                        ${evt.lcoName
-                          ? html`<span class="px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/60 font-medium">LCO: ${evt.lcoName}</span>`
-                          : ''}
+              ${showPast
+                ? html`
+                    <section class="space-y-4">
+                      <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div>
+                          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                            <span>📜</span> Past Launch Meets / Archive
+                            <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-semibold">${pastEvents.length}</span>
+                          </h2>
+                          <p class="text-xs text-slate-400 mt-0.5">Historical meets, logged range records, and past operations.</p>
+                        </div>
                       </div>
 
-                      ${evt.weatherNotes
+                      ${pastEvents.length === 0
                         ? html`
-                            <p class="text-xs text-slate-400 mt-3 line-clamp-2 bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/80">
-                              ⛅ ${evt.weatherNotes}
-                            </p>
+                            <div class="bg-slate-850/60 border border-slate-800 rounded-xl p-6 text-center text-sm text-slate-400">
+                              No past launch meets recorded in archive.
+                            </div>
                           `
-                        : ''}
-                    </div>
-
-                    <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-                      <a
-                        href="/flights/new?launch_event_id=${evt.id}&launch_site_id=${evt.launchSiteId}"
-                        class="text-slate-400 hover:text-slate-200 transition-colors"
-                      >
-                        + Log Flight
-                      </a>
-                      <a
-                        href="/events/${evt.id}"
-                        class="text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1"
-                      >
-                        View Event Log &rarr;
-                      </a>
-                    </div>
-                  </div>
-                `
-              )}
+                        : html`
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                              ${pastEvents.map(renderEventCard)}
+                            </div>
+                          `}
+                    </section>
+                  `
+                : ''}
             </div>
           `}
     </div>
@@ -219,6 +377,7 @@ export function eventDetailView(
           <div>
             <div class="flex items-center gap-2.5 flex-wrap">
               <h1 class="text-2xl font-extrabold text-white">${event.name}</h1>
+              ${getEventStatusBadge(event.startsOn, event.endsOn)}
               ${event.padCount != null
                 ? html`<span class="px-2.5 py-0.5 bg-slate-800 text-brand-300 text-xs rounded-full font-semibold border border-slate-700">
                     ${event.padCount} Launch Pads
@@ -232,7 +391,14 @@ export function eventDetailView(
             </div>
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <a
+              href="/events/${event.id}/edit"
+              class="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs rounded-lg transition-colors shadow-sm"
+            >
+              <span>✏️</span>
+              <span>Edit Event</span>
+            </a>
             <a
               href="/flights/new?launch_event_id=${event.id}${site ? `&launch_site_id=${site.id}` : ''}"
               class="inline-flex items-center gap-1 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-xs rounded-lg transition-colors shadow-sm"
@@ -623,6 +789,241 @@ export function newEventFormView(
 
   return pageLayout({
     title: 'Schedule Launch Event',
+    activeTab: 'events',
+    content,
+    user,
+  })
+}
+
+/**
+ * Form to edit an existing launch event, modifying host launch site, dates, pad count, officers, notes.
+ */
+export function editEventFormView(
+  event: LaunchEvent | EventWithSite,
+  sites: LaunchSite[],
+  user?: any,
+): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const content = html`
+    <div class="max-w-2xl mx-auto space-y-6">
+      <!-- Breadcrumb -->
+      <nav class="flex items-center gap-2 text-xs text-slate-400">
+        <a href="/events" class="hover:text-white transition-colors">&larr; Back to Launch Events</a>
+        <span>/</span>
+        <a href="/events/${event.id}" class="hover:text-white transition-colors">${event.name}</a>
+        <span>/</span>
+        <span class="text-slate-200 font-medium">Edit Event</span>
+      </nav>
+
+      <!-- Form Container Card -->
+      <div class="bg-slate-850 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-sm">
+        <div class="mb-6 pb-4 border-b border-slate-800">
+          <h1 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>✏️</span> Edit Launch Event
+          </h1>
+          <p class="text-sm text-slate-400 mt-1">
+            Update event details, dates, host field, pad count, and designated range officers.
+          </p>
+        </div>
+
+        <form action="/events/${event.id}/edit" method="POST" class="space-y-5">
+          <!-- Event Name -->
+          <div>
+            <label for="name" class="block text-sm font-semibold text-slate-200 mb-1">
+              Event / Meet Name <span class="text-brand-400">*</span>
+            </label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              required
+              value="${event.name}"
+              placeholder="e.g. Woomera HPR National Gathering 2026 or Lake Tyrrell Launch"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+            />
+          </div>
+
+          <!-- Host Launch Site Selection -->
+          <div>
+            <label for="launch_site_id" class="block text-sm font-semibold text-slate-200 mb-1">
+              Host Launch Site <span class="text-brand-400">*</span>
+            </label>
+            ${sites.length === 0
+              ? html`
+                  <div class="bg-amber-950/40 border border-amber-700/60 rounded-lg p-3 text-xs text-amber-200">
+                    No launch sites exist yet. You must
+                    <a href="/sites/new" class="font-bold underline text-brand-400">register a launch site</a>
+                    before editing this event.
+                  </div>
+                `
+              : html`
+                  <select
+                    id="launch_site_id"
+                    name="launch_site_id"
+                    required
+                    class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">-- Select Host Launch Site --</option>
+                    ${sites.map(
+                      (s) => html`
+                        <option value="${s.id}" ${event.launchSiteId === s.id ? 'selected' : ''}>
+                          ${s.name} ${s.maxAltitudeAglM ? `(Ceiling: ${s.maxAltitudeAglM}m AGL)` : ''}
+                        </option>
+                      `
+                    )}
+                  </select>
+                `}
+            <p class="text-xs text-slate-500 mt-1">
+              Need a different field? <a href="/sites/new" class="text-brand-400 hover:text-brand-300 underline">+ Add new launch site</a>
+            </p>
+          </div>
+
+          <!-- Date Range Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="starts_on" class="block text-sm font-semibold text-slate-200 mb-1">
+                Starts On (YYYY-MM-DD)
+              </label>
+              <input
+                type="date"
+                id="starts_on"
+                name="starts_on"
+                value="${event.startsOn || ''}"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+              />
+            </div>
+
+            <div>
+              <label for="ends_on" class="block text-sm font-semibold text-slate-200 mb-1">
+                Ends On (YYYY-MM-DD)
+              </label>
+              <input
+                type="date"
+                id="ends_on"
+                name="ends_on"
+                value="${event.endsOn || ''}"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+              />
+            </div>
+          </div>
+
+          <!-- Pad Count -->
+          <div>
+            <label for="pad_count" class="block text-sm font-semibold text-slate-200 mb-1">
+              Number of Launch Pads
+            </label>
+            <input
+              type="number"
+              id="pad_count"
+              name="pad_count"
+              min="1"
+              max="100"
+              value="${event.padCount ?? ''}"
+              placeholder="e.g. 12"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+            />
+            <p class="text-xs text-slate-500 mt-1">Number of active high-power or low-power pads deployed on the range.</p>
+          </div>
+
+          <!-- Safety Officers Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="rso_user_id" class="block text-sm font-semibold text-slate-200 mb-1">
+                Range Safety Officer (RSO User ID)
+              </label>
+              <input
+                type="text"
+                id="rso_user_id"
+                name="rso_user_id"
+                value="${event.rsoUserId || ''}"
+                placeholder="Optional User UUID"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+              />
+            </div>
+
+            <div>
+              <label for="lco_user_id" class="block text-sm font-semibold text-slate-200 mb-1">
+                Launch Control Officer (LCO User ID)
+              </label>
+              <input
+                type="text"
+                id="lco_user_id"
+                name="lco_user_id"
+                value="${event.lcoUserId || ''}"
+                placeholder="Optional User UUID"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+              />
+            </div>
+          </div>
+
+          <!-- Event Leadership (Launch Director & Tripoli Prefect) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="launch_director" class="block text-sm font-semibold text-slate-200 mb-1">
+                Launch Director
+              </label>
+              <input
+                type="text"
+                id="launch_director"
+                name="launch_director"
+                value="${event.launchDirector || ''}"
+                placeholder="Name of Launch Director"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+              />
+              <p class="text-xs text-slate-500 mt-1">Lead officer overseeing launch meet operations.</p>
+            </div>
+
+            <div>
+              <label for="tripoli_prefect" class="block text-sm font-semibold text-slate-200 mb-1">
+                Tripoli Prefect
+              </label>
+              <input
+                type="text"
+                id="tripoli_prefect"
+                name="tripoli_prefect"
+                value="${event.tripoliPrefect || ''}"
+                placeholder="Name of Tripoli Prefect / TRA Sanctioning Officer"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+              />
+              <p class="text-xs text-slate-500 mt-1">Tripoli Rocketry Association sanctioning authority.</p>
+            </div>
+          </div>
+
+          <!-- Weather Notes -->
+          <div>
+            <label for="weather_notes" class="block text-sm font-semibold text-slate-200 mb-1">
+              Weather Notes & Range Forecast
+            </label>
+            <textarea
+              id="weather_notes"
+              name="weather_notes"
+              rows="3"
+              placeholder="Forecasted wind velocity, cloud ceiling, temperature, ground conditions..."
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+            >${event.weatherNotes || ''}</textarea>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+            <a
+              href="/events/${event.id}"
+              class="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors border border-slate-700"
+            >
+              Cancel
+            </a>
+            <button
+              type="submit"
+              class="px-5 py-2 text-sm font-semibold text-slate-950 bg-brand-500 hover:bg-brand-400 rounded-lg transition-colors shadow-sm cursor-pointer"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `
+
+  return pageLayout({
+    title: `Edit ${event.name} — Launch Event`,
     activeTab: 'events',
     content,
     user,

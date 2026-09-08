@@ -16,6 +16,7 @@ export interface FlightListItem {
   id: string
   flightNumber?: number | null
   flownAt?: number | null
+  logType?: string | null
   rocketName?: string | null
   configVersion?: number | null
   motorModel?: string | null
@@ -33,6 +34,7 @@ export interface FlightDetailOptions {
   flight: {
     id: string
     flyerId: string
+    logType?: string | null
     rocketConfigurationId?: string | null
     motorId?: string | null
     motorInventoryId?: string | null
@@ -99,6 +101,8 @@ export interface FlightDetailOptions {
     lengthMm?: number | null
     certNumber?: string | null
     certifyingOrg?: string | null
+    hardware?: string | null
+    casingReusable?: boolean | null
   } | null
   site?: {
     id: string
@@ -167,6 +171,9 @@ export interface PreflightFormProps {
     id: string
     name: string
     launchSiteId: string
+    startsOn?: string | null
+    endsOn?: string | null
+    siteName?: string | null
   }>
   users?: Array<{
     id: string
@@ -206,6 +213,16 @@ export function renderOutcomeBadge(outcome?: string | null): HtmlEscapedString |
     default:
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/30">${outcome}</span>`
   }
+}
+
+/**
+ * Renders a visual badge distinguishing Preflight Simulation / Planned vs Actual Flight.
+ */
+export function renderFlightLogTypeBadge(logType?: string | null): HtmlEscapedString | Promise<HtmlEscapedString> {
+  if (logType === 'preflight') {
+    return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">📋 Planned / Sim</span>`
+  }
+  return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">🚀 Actual Flight</span>`
 }
 
 /**
@@ -372,6 +389,7 @@ export function flightsListView(
                 <thead class="bg-slate-900/60 text-xs text-slate-400 uppercase tracking-wider font-semibold">
                   <tr>
                     <th scope="col" class="px-6 py-3.5">Date</th>
+                    <th scope="col" class="px-6 py-3.5">Stage</th>
                     <th scope="col" class="px-6 py-3.5">Rocket</th>
                     <th scope="col" class="px-6 py-3.5">Motor</th>
                     <th scope="col" class="px-6 py-3.5">Peak Altitude (AGL)</th>
@@ -395,6 +413,9 @@ export function flightsListView(
                       <tr class="hover:bg-slate-700/20 transition-colors">
                         <td class="px-6 py-4 whitespace-nowrap text-slate-300 font-medium">
                           ${formatDate(f.flownAt)}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          ${renderFlightLogTypeBadge(f.logType)}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <div class="font-semibold text-white">
@@ -484,6 +505,7 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
           </div>
           <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
             <span>${flightTitle}</span>
+            ${renderFlightLogTypeBadge(flight.logType)}
             ${renderOutcomeBadge(flight.outcome)}
           </h1>
           <p class="mt-1 text-sm text-slate-400">
@@ -619,8 +641,8 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dd class="mt-1 font-mono text-lg font-bold text-white">
                 ${flight.altitudeAglM != null
                   ? (isImperial
-                      ? `${Math.round(flight.altitudeAglM * 3.28084).toLocaleString()} ft`
-                      : `${flight.altitudeAglM.toLocaleString()} m`)
+                      ? `${Math.round(flight.altitudeAglM * 3.28084).toLocaleString()} ft (${flight.altitudeAglM.toLocaleString()} m)`
+                      : `${flight.altitudeAglM.toLocaleString()} m (${Math.round(flight.altitudeAglM * 3.28084).toLocaleString()} ft)`)
                   : '—'}
               </dd>
             </div>
@@ -629,8 +651,8 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dd class="mt-1 font-mono text-lg font-bold text-white">
                 ${flight.altitudeMslM != null
                   ? (isImperial
-                      ? `${Math.round(flight.altitudeMslM * 3.28084).toLocaleString()} ft`
-                      : `${flight.altitudeMslM.toLocaleString()} m`)
+                      ? `${Math.round(flight.altitudeMslM * 3.28084).toLocaleString()} ft (${flight.altitudeMslM.toLocaleString()} m)`
+                      : `${flight.altitudeMslM.toLocaleString()} m (${Math.round(flight.altitudeMslM * 3.28084).toLocaleString()} ft)`)
                   : '—'}
               </dd>
             </div>
@@ -644,6 +666,12 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dt class="text-xs text-slate-400">Peak Acceleration</dt>
               <dd class="mt-1 font-mono text-lg font-bold text-white">
                 ${flight.maxAccelG != null ? `${flight.maxAccelG.toLocaleString()} G` : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Flight Stage</dt>
+              <dd class="mt-1">
+                ${renderFlightLogTypeBadge(flight.logType)}
               </dd>
             </div>
             <div>
@@ -784,6 +812,12 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dt class="text-xs text-slate-400">Propellant Type</dt>
               <dd class="mt-1 text-slate-200 uppercase font-mono text-xs">
                 ${motor?.propellantType || 'APCP'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Required Casing / Hardware</dt>
+              <dd class="mt-1 font-mono font-semibold text-slate-200">
+                ${motor ? (motor.hardware || (motor.casingReusable ? 'Reloadable Casing' : 'Single-Use')) : '—'}
               </dd>
             </div>
           </dl>
@@ -956,6 +990,28 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
             <span class="text-xs font-normal text-slate-400">Active flyer cert: Level ${flyerCertLevel}</span>
           </h2>
 
+          <!-- Flight Stage / Log Type (R2) -->
+          <div>
+            <label for="log_type" class="block text-sm font-medium text-slate-200 mb-1">
+              Flight Stage / Log Type <span class="text-rose-400">*</span>
+            </label>
+            <select
+              name="log_type"
+              id="log_type"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-medium"
+            >
+              <option value="actual" ${(initialValues['log_type'] ?? initialValues['logType'] ?? 'actual') === 'actual' ? 'selected' : ''}>
+                🚀 Post-Flight Actuals
+              </option>
+              <option value="preflight" ${(initialValues['log_type'] ?? initialValues['logType']) === 'preflight' ? 'selected' : ''}>
+                📋 Preflight Simulation / Planned
+              </option>
+            </select>
+            <p class="text-[11px] text-slate-400 mt-1">
+              Distinguish between planned simulation parameters and actual flown telemetry. Preflight simulation records do not decrement motor inventory.
+            </p>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Rocket Configuration Selector -->
             <div>
@@ -1037,7 +1093,7 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
               </div>
             </div>
 
-            <!-- Motor Selector with Responsive Search Filter (R2) -->
+            <!-- Motor Selector with Responsive Search Filter & Unified Inventory Linkage (R2) -->
             <div class="space-y-1.5">
               <div class="flex items-center justify-between">
                 <label for="motor_id" class="block text-sm font-medium text-slate-200">
@@ -1077,6 +1133,12 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                   const diameterSearch = m.diameterMm != null ? `${m.diameterMm}mm ${m.diameterMm}` : ''
                   const normalizedModel = m.model.replace(/[-_]/g, '')
                   const searchTerms = `${m.manufacturer} ${m.model} ${normalizedModel} ${m.impulseClass || ''} ${delayLabel} ${diameterSearch}`.toLowerCase()
+
+                  const matchingInv = inventories.find((inv) => inv.motorId === m.id && inv.quantityOnHand > 0)
+                  const stockCount = matchingInv ? matchingInv.quantityOnHand : 0
+                  const stockBadge = stockCount > 0 ? ` — [In Stock: ${stockCount}]` : ''
+                  const invId = matchingInv ? matchingInv.id : ''
+
                   return html`
                     <option
                       value="${m.id}"
@@ -1086,55 +1148,75 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                       data-model="${m.model}"
                       data-diameter="${m.diameterMm ?? ''}"
                       data-impulse="${m.impulseClass ?? ''}"
+                      data-stock="${stockCount}"
+                      data-inventory-id="${invId}"
                     >
-                      ${m.manufacturer} ${m.model}${delayLabel} ${impulseLabel}${diameterLabel}
+                      ${m.manufacturer} ${m.model}${delayLabel} ${impulseLabel}${diameterLabel}${stockBadge}
                     </option>
                   `
                 })}
               </select>
+
+              <!-- Hidden motor_inventory_id linked to selected motor's inventory -->
+              <input type="hidden" name="motor_inventory_id" id="motor_inventory_id" value="${initialValues['motor_inventory_id'] ?? ''}" />
+
+              <!-- Dynamic live on-hand stock status badge / card -->
+              <div id="motor-stock-status" class="mt-1.5 text-xs"></div>
             </div>
 
-            <!-- Optional Motor Inventory Stock Selector -->
+            <!-- Expected / Target Altitude — Dual Units (Meters & Feet) (R2) -->
             <div>
-              <label for="motor_inventory_id" class="block text-sm font-medium text-slate-200 mb-1">
-                Motor Stock Item <span class="text-xs text-slate-400 font-normal">(optional — decrements stock)</span>
+              <label class="block text-sm font-medium text-slate-200 mb-1">
+                Peak / Expected Altitude (AGL) <span class="text-rose-400">*</span>
+                <span class="text-xs text-slate-400 font-normal ml-1">(Dual units: auto-calculates between meters and feet)</span>
               </label>
-              <select
-                name="motor_inventory_id"
-                id="motor_inventory_id"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
-              >
-                <option value="">None / Untracked Motor Item</option>
-                ${inventories.map((inv) => {
-                  const selected = initialValues['motor_inventory_id'] === inv.id ? 'selected' : ''
-                  return html`
-                    <option value="${inv.id}" ${selected}>
-                      ${inv.motorModel || 'Motor'} — ${inv.quantityOnHand} units in stock
-                    </option>
-                  `
-                })}
-              </select>
-            </div>
-
-            <!-- Expected / Target Altitude -->
-            <div>
-              <label for="altitude_agl_m" class="block text-sm font-medium text-slate-200 mb-1">
-                Peak / Expected Altitude (m AGL) <span class="text-rose-400">*</span>
-              </label>
-              <input
-                type="number"
-                step="any"
-                name="altitude_agl_m"
-                id="altitude_agl_m"
-                placeholder="e.g. 850"
-                value="${initialValues['altitude_agl_m'] ?? initialValues['expected_altitude_m'] ?? ''}"
-                required
-                hx-post="/flights/preflight-check"
-                hx-trigger="change, keyup delay:300ms"
-                hx-target="#soft-gate-alerts"
-                hx-include="#flight-form"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
-              />
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <div class="relative rounded-lg shadow-sm">
+                    <input
+                      type="number"
+                      step="any"
+                      name="altitude_agl_m"
+                      id="altitude_agl_m"
+                      placeholder="e.g. 850"
+                      value="${initialValues['altitude_agl_m'] ?? initialValues['expected_altitude_m'] ?? ''}"
+                      required
+                      hx-post="/flights/preflight-check"
+                      hx-trigger="change, keyup delay:300ms"
+                      hx-target="#soft-gate-alerts"
+                      hx-include="#flight-form"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                    />
+                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400 font-semibold">
+                      m
+                    </div>
+                  </div>
+                  <span class="text-[11px] text-slate-400 mt-0.5 block">Meters (canonical)</span>
+                </div>
+                <div>
+                  <div class="relative rounded-lg shadow-sm">
+                    <input
+                      type="number"
+                      step="any"
+                      name="altitude_agl_ft"
+                      id="altitude_agl_ft"
+                      placeholder="e.g. 2788"
+                      value="${(() => {
+                        const mVal = initialValues['altitude_agl_m'] ?? initialValues['expected_altitude_m']
+                        if (mVal !== undefined && mVal !== null && mVal !== '' && !isNaN(Number(mVal))) {
+                          return (Number(mVal) * 3.28084).toFixed(1)
+                        }
+                        return initialValues['altitude_agl_ft'] ?? ''
+                      })()}"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-3 pr-8 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                    />
+                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400 font-semibold">
+                      ft
+                    </div>
+                  </div>
+                  <span class="text-[11px] text-slate-400 mt-0.5 block">Feet</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1187,9 +1269,15 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                 <option value="">Informal Launch / Open Range</option>
                 ${launchEvents.map((e) => {
                   const selected = initialValues['launch_event_id'] === e.id ? 'selected' : ''
+                  const dateText = e.startsOn
+                    ? e.endsOn && e.endsOn !== e.startsOn
+                      ? `${e.startsOn} to ${e.endsOn}`
+                      : e.startsOn
+                    : 'Date TBD'
+                  const siteText = e.siteName || 'No site'
                   return html`
                     <option value="${e.id}" ${selected}>
-                      ${e.name}
+                      ${e.name} (${dateText}) — ${siteText}
                     </option>
                   `
                 })}
@@ -1211,70 +1299,36 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
             <!-- Range Safety Officer (RSO) -->
             <div>
               <label for="rso_name" class="block text-sm font-medium text-slate-200 mb-1">
-                Range Safety Officer (RSO) <span class="text-xs text-slate-400 font-normal">(Name or callsign)</span>
+                Range Safety Officer (RSO)
               </label>
               <input
                 type="text"
                 name="rso_name"
                 id="rso_name"
-                placeholder="e.g. Chief Safety Dan or TRA #4102"
+                placeholder="e.g. Jane Doe"
                 value="${initialValues['rso_name'] ?? initialValues['rsoName'] ?? ''}"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
               />
-              ${users && users.length > 0
-                ? html`
-                  <select
-                    name="rso_user_id"
-                    id="rso_user_id"
-                    class="mt-1.5 w-full bg-slate-900/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                    onchange="if(this.value){const t=this.options[this.selectedIndex].text;const n=document.getElementById('rso_name');if(n&&!n.value)n.value=t;}"
-                  >
-                    <option value="">-- Link registered flyer (optional) --</option>
-                    ${users.map((u) => {
-                      const selected =
-                        (initialValues['rso_user_id'] ?? initialValues['rsoUserId']) === u.id ? 'selected' : ''
-                      return html`<option value="${u.id}" ${selected}>${u.displayName}</option>`
-                    })}
-                  </select>
-                `
-                : html`<input type="hidden" name="rso_user_id" id="rso_user_id" value="${initialValues['rso_user_id'] ?? initialValues['rsoUserId'] ?? ''}" />`}
               <p class="text-[11px] text-slate-400 mt-1">
-                Enter active RSO name/callsign or select from registered club members.
+                Active Range Safety Officer name or callsign for this flight.
               </p>
             </div>
 
             <!-- Launch Control Officer (LCO) -->
             <div>
               <label for="lco_name" class="block text-sm font-medium text-slate-200 mb-1">
-                Launch Control Officer (LCO) <span class="text-xs text-slate-400 font-normal">(Name or callsign)</span>
+                Launch Control Officer (LCO)
               </label>
               <input
                 type="text"
                 name="lco_name"
                 id="lco_name"
-                placeholder="e.g. Launch Controller Alice"
+                placeholder="e.g. John Smith"
                 value="${initialValues['lco_name'] ?? initialValues['lcoName'] ?? ''}"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
               />
-              ${users && users.length > 0
-                ? html`
-                  <select
-                    name="lco_user_id"
-                    id="lco_user_id"
-                    class="mt-1.5 w-full bg-slate-900/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                    onchange="if(this.value){const t=this.options[this.selectedIndex].text;const n=document.getElementById('lco_name');if(n&&!n.value)n.value=t;}"
-                  >
-                    <option value="">-- Link registered flyer (optional) --</option>
-                    ${users.map((u) => {
-                      const selected =
-                        (initialValues['lco_user_id'] ?? initialValues['lcoUserId']) === u.id ? 'selected' : ''
-                      return html`<option value="${u.id}" ${selected}>${u.displayName}</option>`
-                    })}
-                  </select>
-                `
-                : html`<input type="hidden" name="lco_user_id" id="lco_user_id" value="${initialValues['lco_user_id'] ?? initialValues['lcoUserId'] ?? ''}" />`}
               <p class="text-[11px] text-slate-400 mt-1">
-                Enter active LCO name/callsign or select from registered club members.
+                Active Launch Control Officer name or callsign for this flight.
               </p>
             </div>
           </div>
@@ -1467,6 +1521,76 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
 
       <!-- Client-side Motor Search Filter Script (R2) -->
       <script>
+        // Bi-directional Dual Altitude Sync (m <-> ft) (R2)
+        function initDualAltitudeSync() {
+          var mInput = document.getElementById('altitude_agl_m');
+          var ftInput = document.getElementById('altitude_agl_ft');
+          if (!mInput || !ftInput) return;
+
+          var isSyncing = false;
+
+          mInput.addEventListener('input', function() {
+            if (isSyncing) return;
+            isSyncing = true;
+            var val = mInput.value.trim();
+            if (val !== '' && !isNaN(Number(val))) {
+              var mVal = parseFloat(val);
+              ftInput.value = (mVal * 3.28084).toFixed(1);
+            } else {
+              ftInput.value = '';
+            }
+            isSyncing = false;
+          });
+
+          ftInput.addEventListener('input', function() {
+            if (isSyncing) return;
+            isSyncing = true;
+            var val = ftInput.value.trim();
+            if (val !== '' && !isNaN(Number(val))) {
+              var ftVal = parseFloat(val);
+              mInput.value = (ftVal * 0.3048).toFixed(1);
+              // Dispatch native change event so HTMX soft-gate check triggers
+              mInput.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+              mInput.value = '';
+              mInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            isSyncing = false;
+          });
+        }
+
+        // Unified Motor Stock Badge & Hidden Inventory ID Sync (R2)
+        function updateMotorStockStatus() {
+          var motorSel = document.getElementById('motor_id');
+          var invHidden = document.getElementById('motor_inventory_id');
+          var statusEl = document.getElementById('motor-stock-status');
+          if (!motorSel || !statusEl) return;
+
+          var opt = motorSel.options[motorSel.selectedIndex];
+          if (!opt || !opt.value) {
+            statusEl.innerHTML = '';
+            if (invHidden) invHidden.value = '';
+            return;
+          }
+
+          var stock = parseInt(opt.getAttribute('data-stock') || '0', 10);
+          var invId = opt.getAttribute('data-inventory-id') || '';
+
+          if (invHidden) invHidden.value = invId;
+
+          if (stock > 0) {
+            statusEl.innerHTML =
+              '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/60 text-emerald-300 border border-emerald-600/40 font-medium">' +
+              '<span>📦</span> In Stock: <strong>' + stock + ' units</strong> on hand (will decrement from inventory upon flight logging)' +
+              '</span>';
+          } else {
+            statusEl.innerHTML =
+              '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 text-slate-400 border border-slate-700/60">' +
+              '<span>ℹ️</span> Catalog specification only (no inventory units on hand; logged as untracked motor)' +
+              '</span>';
+          }
+        }
+
         (function() {
           function initMotorSearchFilter() {
             var filterInput = document.getElementById('motor-search-filter');
@@ -1474,6 +1598,9 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
             var countBadge = document.getElementById('motor-filter-count');
             var noMatchOpt = document.getElementById('motor-filter-no-match');
             if (!filterInput || !motorSelect) return;
+
+            motorSelect.addEventListener('change', updateMotorStockStatus);
+            updateMotorStockStatus();
 
             function filterMotors() {
               var rawQuery = (filterInput.value || '').trim().toLowerCase();
@@ -1546,9 +1673,13 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
           }
 
           if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initMotorSearchFilter);
+            document.addEventListener('DOMContentLoaded', function() {
+              initMotorSearchFilter();
+              initDualAltitudeSync();
+            });
           } else {
             initMotorSearchFilter();
+            initDualAltitudeSync();
           }
         })();
 

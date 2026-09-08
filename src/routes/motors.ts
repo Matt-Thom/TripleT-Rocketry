@@ -42,7 +42,8 @@ async function listMotorsHandler(c: any) {
 
   const rawImpulseClass = c.req.query('impulse_class') || c.req.query('class') || null
   const impulseClassFilter = rawImpulseClass ? rawImpulseClass.toUpperCase().trim() : null
-  const searchQuery = c.req.query('search') ? c.req.query('search').trim() : null
+  const rawSearch = c.req.query('q') || c.req.query('search') || c.req.query('query') || null
+  const searchQuery = rawSearch && rawSearch.trim().length > 0 ? rawSearch.trim() : null
 
   const conditions: any[] = [isNull(schema.motors.deletedAt)]
 
@@ -56,6 +57,7 @@ async function listMotorsHandler(c: any) {
         like(schema.motors.model, `%${searchQuery}%`),
         like(schema.motors.manufacturer, `%${searchQuery}%`),
         like(schema.motors.partNumber, `%${searchQuery}%`),
+        like(schema.motors.hardware, `%${searchQuery}%`),
       ),
     )
   }

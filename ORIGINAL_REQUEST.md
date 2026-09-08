@@ -82,3 +82,71 @@ Integrity mode: development
 ### Verification & Quality
 - [ ] `npm run typecheck` exits with code 0 and zero TypeScript errors.
 - [ ] `npm test` runs all test suites against local D1 and passes 100% of test cases.
+
+## 2026-09-08T07:54:37Z
+
+Implement usability and domain refinements for TripleT-Rocketry covering launch event visibility & editing, flight logging enhancements (dual altitude units, simplified duty officers, flight log type, unified motor selection), and reload motor casing/hardware tracking.
+
+Working directory: /home/matt/Code/TripleT-Rocketry
+Integrity mode: development
+
+## Requirements
+
+### R1. Launch Events: Past Events Visibility, Full Editing & Flight Selection
+- **Past Event Visibility**: Ensure all launch meets (both upcoming and past) are clearly visible and organized on the events page (`/events`), using distinct sections or tabs (e.g. "Upcoming Launches" and "Past Launch Meets / Archive") with clear date tags so past events are never hidden or lost.
+- **Event Editing Workflow**: Provide an event editing interface with `GET /events/:id/edit` and `POST /events/:id/edit` (and `PUT /events/:id`), allowing organizers to modify event name, host site, dates, pad count, launch director, tripoli prefect, and notes, accessible via an "✏️ Edit Event" button on the event detail view and list.
+- **Flight Event Selectability**: Ensure all past and upcoming events are selectable in the flight logging dropdown (`/flights/new`, `/flights/:id/edit`), clearly formatted with event name, date, and launch site.
+
+### R2. Flight Logbook: Dual Altitude Units, Pure Text Duty Officers, Flight Stage, & Unified Motor Input
+- **Dual Peak Altitude (Meters & Feet)**:
+  - Display side-by-side inputs for Peak Altitude in meters (`m`) and feet (`ft`), each occupying half width.
+  - Implement real-time bi-directional calculation: entering feet automatically computes and populates meters (`m = ft * 0.3048`), and entering meters automatically computes and populates feet (`ft = m * 3.28084`).
+  - Persist the canonical altitude in meters (`altitude_agl_m`) in D1 while displaying both units on flight detail views.
+- **Pure Text Duty Officers**:
+  - Remove the "Link registered flyer" user dropdown/linking for Range Safety Officer (RSO) and Launch Control Officer (LCO).
+  - Provide simple text input fields (`rso_name` and `lco_name`) directly on the flight log form.
+- **Flight Log Type (Preflight vs Actual)**:
+  - Add a selectable flight log type field distinguishing whether the record is a "Preflight Simulation / Planned" flight or a "Post-Flight Actuals" log (`log_type`: `'preflight'` | `'actual'`).
+  - Display distinct visual badges on flight logs, list views, and detail cards.
+- **Unified Motor Selection**:
+  - Consolidate the separate "Motor Model" (catalog) and "Motor Stock Item" (inventory) inputs into a single, unified motor selector.
+  - Allow flyers to select a motor once; if the flyer has inventory units for that motor, display an on-hand stock badge and seamlessly link inventory, without requiring two duplicate fields.
+
+### R3. Reload Motor Casings & Hardware Tracking
+- **Required Casing / Hardware Association**:
+  - Track what motor casing/hardware is required for reloadable motors (using the manufacturer hardware specifications from AeroTech and Cesaroni catalog data in `motors.hardware`).
+  - Prominently display the required casing/hardware on the motor catalog detail views, motor inventory cards, and flight motor summary so flyers immediately know which casing is needed.
+  - Ensure motor CSV import and manual motor creation preserve and display the hardware field.
+
+### R4. Automated Testing & Verification
+- Comprehensive automated unit and integration tests covering:
+  - Event editing workflows (`GET /events/:id/edit`, `POST /events/:id/edit`) and past event visibility on `/events`.
+  - Dual altitude unit entry, real-time bi-directional calculation, and database persistence.
+  - Simplified text duty officers (RSO and LCO) without user foreign key constraints.
+  - Flight log type selection (`preflight` vs `actual`) and badge display.
+  - Unified motor selector behavior with inventory deduction and catalog fallback.
+  - Motor casing/hardware tracking and display in catalog, inventory, and flight views.
+- All tests execute against the local Cloudflare D1 environment and pass 100% in Vitest.
+- TypeScript typecheck passes cleanly with zero errors (`npm run typecheck`).
+
+## Acceptance Criteria
+
+### Launch Events
+- [ ] Past launch events are clearly visible and organized on `/events` (e.g. in a "Past Launch Meets" section or tab).
+- [ ] Users can edit any event via `/events/:id/edit` and updates are saved to D1.
+- [ ] All past and upcoming events appear in the flight logging event dropdown.
+
+### Flight Logbook
+- [ ] Peak Altitude displays side-by-side meters and feet inputs, each half size.
+- [ ] Typing into feet updates meters, and typing into meters updates feet automatically.
+- [ ] RSO and LCO are simple text input fields without requiring user account linking.
+- [ ] Flight logging form includes a selectable toggle between Preflight Simulation / Planned and Post-Flight Actuals.
+- [ ] Flight form provides a single unified motor input instead of two separate motor fields.
+
+### Motor Casings & Hardware
+- [ ] Motor catalog detail and inventory views display the required motor casing / hardware.
+- [ ] CSV import and motor creation reliably store and display the hardware casing specification.
+
+### Verification & Quality
+- [ ] `npm run typecheck` exits with status 0 and zero TypeScript diagnostics.
+- [ ] `npm test` passes 100% of test suites with zero failures.

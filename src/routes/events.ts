@@ -13,7 +13,7 @@ import { eq, desc, asc, inArray } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { pageLayout } from '../views/layout'
-import { eventsListView, eventDetailView, newEventFormView } from '../views/events'
+import { eventsListView, eventDetailView, newEventFormView, editEventFormView } from '../views/events'
 
 type Bindings = {
   DB: D1Database
@@ -70,6 +70,8 @@ async function parseEventInput(c: any) {
         ? json.weather_notes.trim()
         : json.weatherNotes && typeof json.weatherNotes === 'string' && json.weatherNotes.trim()
         ? json.weatherNotes.trim()
+        : json.notes && typeof json.notes === 'string' && json.notes.trim()
+        ? json.notes.trim()
         : null
     rsoUserId =
       json.rso_user_id && typeof json.rso_user_id === 'string' && json.rso_user_id.trim()
@@ -126,6 +128,8 @@ async function parseEventInput(c: any) {
         ? body.weather_notes.trim()
         : body.weatherNotes && typeof body.weatherNotes === 'string' && body.weatherNotes.trim()
         ? body.weatherNotes.trim()
+        : body.notes && typeof body.notes === 'string' && body.notes.trim()
+        ? body.notes.trim()
         : null
     rsoUserId =
       body.rso_user_id && typeof body.rso_user_id === 'string' && body.rso_user_id.trim()
@@ -216,7 +220,8 @@ async function handleListEvents(c: any) {
     return c.json(eventsWithSites)
   }
 
-  return c.html(eventsListView(eventsWithSites, user))
+  const tab = c.req.query('tab') || 'all'
+  return c.html(eventsListView(eventsWithSites, user, tab))
 }
 
 async function handleNewEventForm(c: any) {
@@ -442,6 +447,207 @@ async function handleEventDetail(c: any) {
   return c.html(eventDetailView(eventWithOfficers, site, loggedFlights, user))
 }
 
+async function handleEditEventForm(c: any) {
+  const user = c.get('user') || null
+  const id = c.req.param('id')
+  const db = drizzle(c.env.DB, { schema })
+
+  const [event] = await db
+    .select()
+    .from(schema.launchEvents)
+    .where(eq(schema.launchEvents.id, id))
+
+  if (!event) {
+    if (c.req.header('accept') === 'application/json') {
+      return c.json({ error: 'Launch event not found' }, 404)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Launch Event Not Found',
+        activeTab: 'events',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-8 text-center my-12">
+            <div class="text-4xl mb-2">🔍</div>
+            <h1 class="text-xl font-bold text-white">Event Not Found</h1>
+            <p class="text-sm text-slate-400 mt-2">The requested launch event could not be located in D1.</p>
+            <a href="/events" class="mt-6 inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300 font-medium">
+              &larr; Back to all launch events
+            </a>
+          </div>
+        `,
+      }),
+      404
+    )
+  }
+
+  const allSites = await db
+    .select()
+    .from(schema.launchSites)
+    .orderBy(asc(schema.launchSites.name))
+
+  return c.html(editEventFormView(event, allSites, user))
+}
+
+async function handleUpdateEvent(c: any) {
+  const id = c.req.param('id')
+  const user = c.get('user') || null
+  const input = await parseEventInput(c)
+
+  if (!input.name || !input.launchSiteId) {
+    const errorMsg = !input.name
+      ? 'Event name is required'
+      : 'Host launch site selection is required'
+
+    if (input.isJson) {
+      return c.json({ error: errorMsg }, 400)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Validation Error',
+        activeTab: 'events',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
+            <h2 class="text-xl font-bold text-rose-400">Missing Required Information</h2>
+            <p class="text-sm text-slate-300 mt-2">${errorMsg}</p>
+            <a href="/events/${id}/edit" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Form</a>
+          </div>
+        `,
+      }),
+      400
+    )
+  }
+
+  const db = drizzle(c.env.DB, { schema })
+
+  // Verify event exists
+  const [existingEvent] = await db
+    .select()
+    .from(schema.launchEvents)
+    .where(eq(schema.launchEvents.id, id))
+
+  if (!existingEvent) {
+    if (input.isJson) {
+      return c.json({ error: 'Launch event not found' }, 404)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Launch Event Not Found',
+        activeTab: 'events',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-8 text-center my-12">
+            <div class="text-4xl mb-2">🔍</div>
+            <h1 class="text-xl font-bold text-white">Event Not Found</h1>
+            <p class="text-sm text-slate-400 mt-2">The requested launch event could not be located in D1.</p>
+            <a href="/events" class="mt-6 inline-flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300 font-medium">
+              &larr; Back to all launch events
+            </a>
+          </div>
+        `,
+      }),
+      404
+    )
+  }
+
+  // Verify launch site exists
+  const [site] = await db
+    .select()
+    .from(schema.launchSites)
+    .where(eq(schema.launchSites.id, input.launchSiteId))
+
+  if (!site) {
+    if (input.isJson) {
+      return c.json({ error: 'Selected launch site does not exist' }, 400)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Invalid Launch Site',
+        activeTab: 'events',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
+            <h2 class="text-xl font-bold text-rose-400">Invalid Launch Site</h2>
+            <p class="text-sm text-slate-300 mt-2">The selected launch site was not found.</p>
+            <a href="/events/${id}/edit" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Form</a>
+          </div>
+        `,
+      }),
+      400
+    )
+  }
+
+  // Validate and sanitize optional officer user IDs (rsoUserId, lcoUserId)
+  let sanitizedRsoUserId: string | null = null
+  let sanitizedLcoUserId: string | null = null
+
+  const candidateOfficerIds = [input.rsoUserId, input.lcoUserId].filter(
+    (oid): oid is string => typeof oid === 'string' && oid.trim().length > 0,
+  )
+
+  if (candidateOfficerIds.length > 0) {
+    const matchingUsers = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(inArray(schema.users.id, candidateOfficerIds))
+
+    const validUserIds = new Set(matchingUsers.map((u) => u.id))
+
+    if (input.rsoUserId && validUserIds.has(input.rsoUserId)) {
+      sanitizedRsoUserId = input.rsoUserId
+    }
+    if (input.lcoUserId && validUserIds.has(input.lcoUserId)) {
+      sanitizedLcoUserId = input.lcoUserId
+    }
+  }
+
+  try {
+    const [updatedEvent] = await db
+      .update(schema.launchEvents)
+      .set({
+        name: input.name,
+        launchSiteId: input.launchSiteId,
+        startsOn: input.startsOn,
+        endsOn: input.endsOn,
+        padCount: input.padCount,
+        weatherNotes: input.weatherNotes,
+        rsoUserId: sanitizedRsoUserId,
+        lcoUserId: sanitizedLcoUserId,
+        launchDirector: input.launchDirector,
+        tripoliPrefect: input.tripoliPrefect,
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.launchEvents.id, id))
+      .returning()
+
+    if (input.isJson) {
+      return c.json(updatedEvent, 200)
+    }
+
+    return c.redirect(`/events/${id}`, 303)
+  } catch (err: any) {
+    if (input.isJson) {
+      return c.json({ error: 'Failed to update launch event: ' + err.message }, 400)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Event Update Failed',
+        activeTab: 'events',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
+            <h2 class="text-xl font-bold text-rose-400">Failed to Update Event</h2>
+            <p class="text-sm text-slate-300 mt-2">${err?.message || 'Database error occurred'}</p>
+            <a href="/events/${id}/edit" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Form</a>
+          </div>
+        `,
+      }),
+      400
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Route Bindings (Supports both mounted at '/events' and mounted at root '/')
 // ---------------------------------------------------------------------------
@@ -450,11 +656,19 @@ async function handleEventDetail(c: any) {
 events.get('/new', handleNewEventForm)
 events.get('/events/new', handleNewEventForm)
 
-// 2. Specific event detail
+// 2. Edit form & update (must precede /:id)
+events.get('/:id/edit', handleEditEventForm)
+events.get('/events/:id/edit', handleEditEventForm)
+events.post('/:id/edit', handleUpdateEvent)
+events.post('/events/:id/edit', handleUpdateEvent)
+events.put('/:id', handleUpdateEvent)
+events.put('/events/:id', handleUpdateEvent)
+
+// 3. Specific event detail
 events.get('/:id', handleEventDetail)
 events.get('/events/:id', handleEventDetail)
 
-// 3. List and create
+// 4. List and create
 events.get('/', handleListEvents)
 events.get('/events', handleListEvents)
 events.post('/', handleCreateEvent)

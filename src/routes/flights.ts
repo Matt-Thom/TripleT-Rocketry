@@ -11,7 +11,7 @@
  */
 
 import { Hono } from 'hono'
-import { desc, eq, sql, inArray } from 'drizzle-orm'
+import { desc, asc, eq, sql, inArray, and, gt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { getActiveFlyer } from '../db/context'
@@ -50,6 +50,7 @@ flightsRouter.get('/', async (c) => {
       id: schema.flights.id,
       flightNumber: schema.flights.flightNumber,
       flownAt: schema.flights.flownAt,
+      logType: schema.flights.logType,
       altitudeAglM: schema.flights.altitudeAglM,
       maxVelocityMps: schema.flights.maxVelocityMps,
       outcome: schema.flights.outcome,
@@ -89,6 +90,7 @@ flightsRouter.get('/', async (c) => {
     id: f.id,
     flightNumber: f.flightNumber,
     flownAt: f.flownAt,
+    logType: f.logType,
     altitudeAglM: f.altitudeAglM,
     maxVelocityMps: f.maxVelocityMps,
     outcome: f.outcome,
@@ -156,6 +158,8 @@ flightsRouter.get('/new', async (c) => {
           impulseClass: schema.motors.impulseClass,
           delayS: schema.motors.delayS,
           diameterMm: schema.motors.diameterMm,
+          hardware: schema.motors.hardware,
+          casingReusable: schema.motors.casingReusable,
         })
         .from(schema.motors)
         .orderBy(schema.motors.manufacturer, schema.motors.model),
@@ -184,9 +188,13 @@ flightsRouter.get('/new', async (c) => {
           id: schema.launchEvents.id,
           name: schema.launchEvents.name,
           launchSiteId: schema.launchEvents.launchSiteId,
+          startsOn: schema.launchEvents.startsOn,
+          endsOn: schema.launchEvents.endsOn,
+          siteName: schema.launchSites.name,
         })
         .from(schema.launchEvents)
-        .orderBy(schema.launchEvents.name),
+        .leftJoin(schema.launchSites, eq(schema.launchEvents.launchSiteId, schema.launchSites.id))
+        .orderBy(desc(schema.launchEvents.startsOn), asc(schema.launchEvents.name)),
       db
         .select({
           id: schema.users.id,
@@ -312,10 +320,13 @@ flightsRouter.post('/preflight-check', async (c) => {
 
   // 5. Expected / target altitude
   const altRaw = body['expected_altitude_m'] ?? body['altitude_agl_m']
-  const expectedAltitudeM =
+  let expectedAltitudeM =
     altRaw !== undefined && altRaw !== null && altRaw !== '' && !isNaN(Number(altRaw))
       ? Number(altRaw)
       : null
+  if (expectedAltitudeM === null && body['altitude_agl_ft'] !== undefined && body['altitude_agl_ft'] !== '' && !isNaN(Number(body['altitude_agl_ft']))) {
+    expectedAltitudeM = Number((Number(body['altitude_agl_ft']) * 0.3048).toFixed(2))
+  }
 
   // Evaluate pure domain soft-gate rules
   const warnings = evaluateSoftGates({
@@ -346,20 +357,44 @@ flightsRouter.post('/', async (c) => {
   const flyerId = body['flyer_id'] ? String(body['flyer_id']).trim() : activeFlyer.id
 
   // Form field extractions
+  const logType = body['log_type'] === 'preflight' ? 'preflight' : 'actual'
   const rocketConfigId = body['rocket_configuration_id']
     ? String(body['rocket_configuration_id']).trim()
     : null
   const motorId = body['motor_id'] ? String(body['motor_id']).trim() : null
-  const motorInventoryId = body['motor_inventory_id']
+  let motorInventoryId = body['motor_inventory_id']
     ? String(body['motor_inventory_id']).trim()
     : null
+
+  // Auto-link inventory if motor_inventory_id was not explicitly passed but flyer has stock
+  if (!motorInventoryId && motorId) {
+    const [availableInv] = await db
+      .select({ id: schema.motorInventories.id, quantityOnHand: schema.motorInventories.quantityOnHand })
+      .from(schema.motorInventories)
+      .where(
+        and(
+          eq(schema.motorInventories.userId, flyerId),
+          eq(schema.motorInventories.motorId, motorId),
+          gt(schema.motorInventories.quantityOnHand, 0),
+        ),
+      )
+      .limit(1)
+
+    if (availableInv) {
+      motorInventoryId = availableInv.id
+    }
+  }
+
   const launchSiteId = body['launch_site_id'] ? String(body['launch_site_id']).trim() : null
   const launchEventId = body['launch_event_id'] ? String(body['launch_event_id']).trim() : null
 
-  const altitudeAglM =
-    body['altitude_agl_m'] !== undefined && body['altitude_agl_m'] !== '' && !isNaN(Number(body['altitude_agl_m']))
-      ? Number(body['altitude_agl_m'])
-      : null
+  let altitudeAglM: number | null = null
+  if (body['altitude_agl_m'] !== undefined && body['altitude_agl_m'] !== '' && !isNaN(Number(body['altitude_agl_m']))) {
+    altitudeAglM = Number(body['altitude_agl_m'])
+  } else if (body['altitude_agl_ft'] !== undefined && body['altitude_agl_ft'] !== '' && !isNaN(Number(body['altitude_agl_ft']))) {
+    altitudeAglM = Number((Number(body['altitude_agl_ft']) * 0.3048).toFixed(2))
+  }
+
   const expectedAltitudeM =
     body['expected_altitude_m'] !== undefined &&
     body['expected_altitude_m'] !== '' &&
@@ -594,6 +629,8 @@ flightsRouter.post('/', async (c) => {
             impulseClass: schema.motors.impulseClass,
             delayS: schema.motors.delayS,
             diameterMm: schema.motors.diameterMm,
+            hardware: schema.motors.hardware,
+            casingReusable: schema.motors.casingReusable,
           })
           .from(schema.motors)
           .orderBy(schema.motors.manufacturer, schema.motors.model),
@@ -622,9 +659,13 @@ flightsRouter.post('/', async (c) => {
             id: schema.launchEvents.id,
             name: schema.launchEvents.name,
             launchSiteId: schema.launchEvents.launchSiteId,
+            startsOn: schema.launchEvents.startsOn,
+            endsOn: schema.launchEvents.endsOn,
+            siteName: schema.launchSites.name,
           })
           .from(schema.launchEvents)
-          .orderBy(schema.launchEvents.name),
+          .leftJoin(schema.launchSites, eq(schema.launchEvents.launchSiteId, schema.launchSites.id))
+          .orderBy(desc(schema.launchEvents.startsOn), asc(schema.launchEvents.name)),
         db
           .select({
             id: schema.users.id,
@@ -683,6 +724,7 @@ flightsRouter.post('/', async (c) => {
       launchEventId,
       flightNumber,
       flownAt,
+      logType,
       altitudeAglM,
       altitudeMslM,
       maxVelocityMps,
@@ -703,8 +745,8 @@ flightsRouter.post('/', async (c) => {
     })
     .returning()
 
-  // Atomically decrement motor inventory if an inventory item was selected
-  if (motorInventoryId) {
+  // Atomically decrement motor inventory if an actual flight and an inventory item was selected
+  if (logType === 'actual' && motorInventoryId) {
     await db
       .update(schema.motorInventories)
       .set({
@@ -772,6 +814,8 @@ flightsRouter.get('/:id/edit', async (c) => {
           impulseClass: schema.motors.impulseClass,
           delayS: schema.motors.delayS,
           diameterMm: schema.motors.diameterMm,
+          hardware: schema.motors.hardware,
+          casingReusable: schema.motors.casingReusable,
         })
         .from(schema.motors)
         .orderBy(schema.motors.manufacturer, schema.motors.model),
@@ -800,9 +844,13 @@ flightsRouter.get('/:id/edit', async (c) => {
           id: schema.launchEvents.id,
           name: schema.launchEvents.name,
           launchSiteId: schema.launchEvents.launchSiteId,
+          startsOn: schema.launchEvents.startsOn,
+          endsOn: schema.launchEvents.endsOn,
+          siteName: schema.launchSites.name,
         })
         .from(schema.launchEvents)
-        .orderBy(schema.launchEvents.name),
+        .leftJoin(schema.launchSites, eq(schema.launchEvents.launchSiteId, schema.launchSites.id))
+        .orderBy(desc(schema.launchEvents.startsOn), asc(schema.launchEvents.name)),
       db
         .select({
           id: schema.users.id,
@@ -829,7 +877,9 @@ flightsRouter.get('/:id/edit', async (c) => {
     launch_site_id: flight.launchSiteId ?? '',
     launch_event_id: flight.launchEventId ?? '',
     flight_number: flight.flightNumber ?? '',
+    log_type: flight.logType ?? 'actual',
     altitude_agl_m: flight.altitudeAglM ?? '',
+    altitude_agl_ft: flight.altitudeAglM != null ? (flight.altitudeAglM * 3.28084).toFixed(1) : '',
     expected_altitude_m: flight.altitudeAglM ?? '',
     altitude_msl_m: flight.altitudeMslM ?? '',
     max_velocity_mps: flight.maxVelocityMps ?? '',
@@ -922,10 +972,34 @@ async function handleUpdateFlight(c: any) {
       ? (body['motor_id'] ? String(body['motor_id']).trim() : null)
       : existing.motorId
 
-  const motorInventoryId =
+  let motorInventoryId =
     body['motor_inventory_id'] !== undefined
       ? (body['motor_inventory_id'] ? String(body['motor_inventory_id']).trim() : null)
       : existing.motorInventoryId
+
+  // Auto-link inventory if motor_inventory_id was not provided but motor_id has stock
+  if (!motorInventoryId && motorId) {
+    const [availableInv] = await db
+      .select({ id: schema.motorInventories.id, quantityOnHand: schema.motorInventories.quantityOnHand })
+      .from(schema.motorInventories)
+      .where(
+        and(
+          eq(schema.motorInventories.userId, existing.flyerId),
+          eq(schema.motorInventories.motorId, motorId),
+          gt(schema.motorInventories.quantityOnHand, 0),
+        ),
+      )
+      .limit(1)
+
+    if (availableInv) {
+      motorInventoryId = availableInv.id
+    }
+  }
+
+  const logType =
+    body['log_type'] !== undefined
+      ? (body['log_type'] === 'preflight' ? 'preflight' : 'actual')
+      : existing.logType
 
   const launchSiteId =
     body['launch_site_id'] !== undefined
@@ -953,10 +1027,18 @@ async function handleUpdateFlight(c: any) {
     }
   }
 
-  const altitudeAglM =
-    body['altitude_agl_m'] !== undefined
-      ? (body['altitude_agl_m'] !== '' && !isNaN(Number(body['altitude_agl_m'])) ? Number(body['altitude_agl_m']) : null)
-      : existing.altitudeAglM
+  let altitudeAglM: number | null = existing.altitudeAglM
+  if (body['altitude_agl_m'] !== undefined && body['altitude_agl_m'] !== '') {
+    if (!isNaN(Number(body['altitude_agl_m']))) {
+      altitudeAglM = Number(body['altitude_agl_m'])
+    }
+  } else if (body['altitude_agl_ft'] !== undefined && body['altitude_agl_ft'] !== '') {
+    if (!isNaN(Number(body['altitude_agl_ft']))) {
+      altitudeAglM = Number((Number(body['altitude_agl_ft']) * 0.3048).toFixed(2))
+    }
+  } else if (body['altitude_agl_m'] === '') {
+    altitudeAglM = null
+  }
 
   const altitudeMslM =
     body['altitude_msl_m'] !== undefined
@@ -1078,6 +1160,7 @@ async function handleUpdateFlight(c: any) {
       launchEventId,
       flightNumber,
       flownAt,
+      logType,
       altitudeAglM,
       altitudeMslM,
       maxVelocityMps,
