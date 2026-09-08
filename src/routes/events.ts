@@ -36,6 +36,8 @@ async function parseEventInput(c: any) {
   let weatherNotes: string | null = null
   let rsoUserId: string | null = null
   let lcoUserId: string | null = null
+  let launchDirector: string | null = null
+  let tripoliPrefect: string | null = null
 
   if (contentType.includes('application/json')) {
     const json = await c.req.json().catch(() => ({}))
@@ -81,6 +83,18 @@ async function parseEventInput(c: any) {
         : json.lcoUserId && typeof json.lcoUserId === 'string' && json.lcoUserId.trim()
         ? json.lcoUserId.trim()
         : null
+    launchDirector =
+      json.launch_director && typeof json.launch_director === 'string' && json.launch_director.trim()
+        ? json.launch_director.trim()
+        : json.launchDirector && typeof json.launchDirector === 'string' && json.launchDirector.trim()
+        ? json.launchDirector.trim()
+        : null
+    tripoliPrefect =
+      json.tripoli_prefect && typeof json.tripoli_prefect === 'string' && json.tripoli_prefect.trim()
+        ? json.tripoli_prefect.trim()
+        : json.tripoliPrefect && typeof json.tripoliPrefect === 'string' && json.tripoliPrefect.trim()
+        ? json.tripoliPrefect.trim()
+        : null
   } else {
     const body = await c.req.parseBody()
     name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -125,6 +139,18 @@ async function parseEventInput(c: any) {
         : body.lcoUserId && typeof body.lcoUserId === 'string' && body.lcoUserId.trim()
         ? body.lcoUserId.trim()
         : null
+    launchDirector =
+      body.launch_director && typeof body.launch_director === 'string' && body.launch_director.trim()
+        ? body.launch_director.trim()
+        : body.launchDirector && typeof body.launchDirector === 'string' && body.launchDirector.trim()
+        ? body.launchDirector.trim()
+        : null
+    tripoliPrefect =
+      body.tripoli_prefect && typeof body.tripoli_prefect === 'string' && body.tripoli_prefect.trim()
+        ? body.tripoli_prefect.trim()
+        : body.tripoliPrefect && typeof body.tripoliPrefect === 'string' && body.tripoliPrefect.trim()
+        ? body.tripoliPrefect.trim()
+        : null
   }
 
   return {
@@ -136,6 +162,8 @@ async function parseEventInput(c: any) {
     weatherNotes,
     rsoUserId,
     lcoUserId,
+    launchDirector,
+    tripoliPrefect,
     isJson: contentType.includes('application/json'),
   }
 }
@@ -262,25 +290,73 @@ async function handleCreateEvent(c: any) {
     )
   }
 
-  const [newEvent] = await db
-    .insert(schema.launchEvents)
-    .values({
-      launchSiteId: input.launchSiteId,
-      name: input.name,
-      startsOn: input.startsOn,
-      endsOn: input.endsOn,
-      padCount: input.padCount,
-      weatherNotes: input.weatherNotes,
-      rsoUserId: input.rsoUserId,
-      lcoUserId: input.lcoUserId,
-    })
-    .returning()
+  // Validate and sanitize optional officer user IDs (rsoUserId, lcoUserId)
+  // Coerce empty strings and non-existent user IDs to null to prevent SQLite foreign key constraint failures
+  let sanitizedRsoUserId: string | null = null
+  let sanitizedLcoUserId: string | null = null
 
-  if (input.isJson) {
-    return c.json(newEvent, 201)
+  const candidateOfficerIds = [input.rsoUserId, input.lcoUserId].filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0,
+  )
+
+  if (candidateOfficerIds.length > 0) {
+    const matchingUsers = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(inArray(schema.users.id, candidateOfficerIds))
+
+    const validUserIds = new Set(matchingUsers.map((u) => u.id))
+
+    if (input.rsoUserId && validUserIds.has(input.rsoUserId)) {
+      sanitizedRsoUserId = input.rsoUserId
+    }
+    if (input.lcoUserId && validUserIds.has(input.lcoUserId)) {
+      sanitizedLcoUserId = input.lcoUserId
+    }
   }
 
-  return c.redirect(`/events/${newEvent.id}`, 303)
+  try {
+    const [newEvent] = await db
+      .insert(schema.launchEvents)
+      .values({
+        launchSiteId: input.launchSiteId,
+        name: input.name,
+        startsOn: input.startsOn,
+        endsOn: input.endsOn,
+        padCount: input.padCount,
+        weatherNotes: input.weatherNotes,
+        rsoUserId: sanitizedRsoUserId,
+        lcoUserId: sanitizedLcoUserId,
+        launchDirector: input.launchDirector,
+        tripoliPrefect: input.tripoliPrefect,
+      })
+      .returning()
+
+    if (input.isJson) {
+      return c.json(newEvent, 201)
+    }
+
+    return c.redirect(`/events/${newEvent.id}`, 303)
+  } catch (err: any) {
+    if (input.isJson) {
+      return c.json({ error: 'Failed to create launch event: ' + err.message }, 400)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Event Creation Failed',
+        activeTab: 'events',
+        user,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-rose-800/80 rounded-xl p-6 text-center">
+            <h2 class="text-xl font-bold text-rose-400">Failed to Create Event</h2>
+            <p class="text-sm text-slate-300 mt-2">${err?.message || 'Database error occurred'}</p>
+            <a href="/events/new" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Form</a>
+          </div>
+        `,
+      }),
+      400,
+    )
+  }
 }
 
 async function handleEventDetail(c: any) {

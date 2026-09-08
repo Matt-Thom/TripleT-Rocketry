@@ -44,7 +44,8 @@ type Variables = {
 export const rocketsRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 function parseOptionalNumber(val: unknown): number | null {
-  if (val === undefined || val === null || val === '') return null
+  if (val === undefined || val === null) return null
+  if (typeof val === 'string' && val.trim() === '') return null
   const n = Number(val)
   return isNaN(n) ? null : n
 }
@@ -203,6 +204,10 @@ rocketsRouter.post('/', async (c) => {
     ? (rawStatus as ValidStatus)
     : 'flight_ready'
 
+  // Parse airframe physical dimensions (R6)
+  const lengthMm = parseOptionalNumber(body.length_mm ?? body.lengthMm)
+  const bodyDiameterMm = parseOptionalNumber(body.body_diameter_mm ?? body.bodyDiameterMm)
+
   // Insert airframe
   const [newRocket] = await db
     .insert(schema.rockets)
@@ -210,6 +215,8 @@ rocketsRouter.post('/', async (c) => {
       ownerId: flyer.id,
       name,
       status,
+      lengthMm,
+      bodyDiameterMm,
       createdBy: flyer.id,
     })
     .returning()
@@ -252,7 +259,9 @@ rocketsRouter.post('/', async (c) => {
     parachuteSizeMm != null ||
     drogueParachuteSizeMm != null ||
     motorMountDiameterMm != null ||
-    airframeMaterial != null
+    airframeMaterial != null ||
+    lengthMm != null ||
+    bodyDiameterMm != null
 
   // Insert baseline version 1 configuration snapshot if configuration fields were provided
   if (hasConfigData) {
@@ -271,6 +280,8 @@ rocketsRouter.post('/', async (c) => {
       parachuteSizeMm,
       drogueParachuteSizeMm,
       motorMountDiameterMm,
+      lengthMm,
+      bodyDiameterMm,
       isCurrent: true,
       createdBy: flyer.id,
     })
@@ -396,10 +407,10 @@ rocketsRouter.get('/:id/edit', async (c) => {
 })
 
 /**
- * POST /rockets/:id
- * Updates rocket airframe name and status.
+ * POST /rockets/:id and POST /rockets/:id/edit
+ * Updates rocket airframe name, status, and physical dimensions.
  */
-rocketsRouter.post('/:id', async (c) => {
+const handleUpdateRocket = async (c: any) => {
   const { id } = c.req.param()
   const db = drizzle(c.env.DB, { schema })
 
@@ -432,17 +443,33 @@ rocketsRouter.post('/:id', async (c) => {
     ? (rawStatus as ValidStatus)
     : (rocket.status as ValidStatus)
 
+  // Parse dimensions, preserving existing values if omitted in partial updates
+  const lengthMm =
+    body.length_mm !== undefined || body.lengthMm !== undefined
+      ? parseOptionalNumber(body.length_mm ?? body.lengthMm)
+      : rocket.lengthMm
+
+  const bodyDiameterMm =
+    body.body_diameter_mm !== undefined || body.bodyDiameterMm !== undefined
+      ? parseOptionalNumber(body.body_diameter_mm ?? body.bodyDiameterMm)
+      : rocket.bodyDiameterMm
+
   await db
     .update(schema.rockets)
     .set({
       name,
       status,
+      lengthMm,
+      bodyDiameterMm,
       updatedAt: Date.now(),
     })
     .where(eq(schema.rockets.id, id))
 
   return c.redirect(`/rockets/${id}`, 303)
-})
+}
+
+rocketsRouter.post('/:id', handleUpdateRocket)
+rocketsRouter.post('/:id/edit', handleUpdateRocket)
 
 /**
  * GET /rockets/:id/configurations/new
@@ -539,7 +566,9 @@ rocketsRouter.post('/:id/configurations', async (c) => {
     .set({ isCurrent: false })
     .where(eq(schema.rocketConfigurations.rocketId, id))
 
-  // Extract new snapshot parameters
+  // Extract new snapshot parameters including physical dimensions (R6)
+  const lengthMm = parseOptionalNumber(body.length_mm ?? body.lengthMm)
+  const bodyDiameterMm = parseOptionalNumber(body.body_diameter_mm ?? body.bodyDiameterMm)
   const airframeMaterial = parseOptionalString(body.airframe_material ?? body.airframeMaterial)
   const finCount = parseOptionalNumber(body.fin_count ?? body.finCount)
   const dryMassG = parseOptionalNumber(body.dry_mass_g ?? body.dryMassG)
@@ -581,12 +610,167 @@ rocketsRouter.post('/:id/configurations', async (c) => {
     parachuteSizeMm,
     drogueParachuteSizeMm,
     motorMountDiameterMm,
+    lengthMm,
+    bodyDiameterMm,
     isCurrent: true,
     createdBy: flyer.id,
   })
 
+  // Synchronize airframe dimensions on parent rocket if provided
+  if (lengthMm != null || bodyDiameterMm != null) {
+    await db
+      .update(schema.rockets)
+      .set({
+        ...(lengthMm != null ? { lengthMm } : {}),
+        ...(bodyDiameterMm != null ? { bodyDiameterMm } : {}),
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.rockets.id, id))
+  }
+
   return c.redirect(`/rockets/${id}`, 303)
 })
+
+/**
+ * POST /rockets/:id/configurations/:configId and /:configId/edit
+ * Updates an existing configuration snapshot's aerodynamic and physical parameters.
+ */
+const handleUpdateConfiguration = async (c: any) => {
+  const { id, configId } = c.req.param()
+  const db = drizzle(c.env.DB, { schema })
+
+  const [targetConfig] = await db
+    .select()
+    .from(schema.rocketConfigurations)
+    .where(
+      and(
+        eq(schema.rocketConfigurations.id, configId),
+        eq(schema.rocketConfigurations.rocketId, id),
+        isNull(schema.rocketConfigurations.deletedAt),
+      ),
+    )
+
+  if (!targetConfig) {
+    return c.text('Configuration snapshot not found', 404)
+  }
+
+  const body = await c.req.parseBody()
+
+  const lengthMm =
+    body.length_mm !== undefined || body.lengthMm !== undefined
+      ? parseOptionalNumber(body.length_mm ?? body.lengthMm)
+      : targetConfig.lengthMm
+
+  const bodyDiameterMm =
+    body.body_diameter_mm !== undefined || body.bodyDiameterMm !== undefined
+      ? parseOptionalNumber(body.body_diameter_mm ?? body.bodyDiameterMm)
+      : targetConfig.bodyDiameterMm
+
+  const airframeMaterial =
+    body.airframe_material !== undefined || body.airframeMaterial !== undefined
+      ? parseOptionalString(body.airframe_material ?? body.airframeMaterial)
+      : targetConfig.airframeMaterial
+
+  const finCount =
+    body.fin_count !== undefined || body.finCount !== undefined
+      ? parseOptionalNumber(body.fin_count ?? body.finCount)
+      : targetConfig.finCount
+
+  const dryMassG =
+    body.dry_mass_g !== undefined || body.dryMassG !== undefined
+      ? parseOptionalNumber(body.dry_mass_g ?? body.dryMassG)
+      : targetConfig.dryMassG
+
+  const loadedMassG =
+    body.loaded_mass_g !== undefined || body.loadedMassG !== undefined
+      ? parseOptionalNumber(body.loaded_mass_g ?? body.loadedMassG)
+      : targetConfig.loadedMassG
+
+  const ballastG =
+    body.ballast_g !== undefined || body.ballastG !== undefined
+      ? parseOptionalNumber(body.ballast_g ?? body.ballastG)
+      : targetConfig.ballastG
+
+  const cgMm =
+    body.cg_mm !== undefined || body.cgMm !== undefined
+      ? parseOptionalNumber(body.cg_mm ?? body.cgMm)
+      : targetConfig.cgMm
+
+  const cpMm =
+    body.cp_mm !== undefined || body.cpMm !== undefined
+      ? parseOptionalNumber(body.cp_mm ?? body.cpMm)
+      : targetConfig.cpMm
+
+  const stabilityCalibers =
+    body.stability_calibers !== undefined || body.stabilityCalibers !== undefined
+      ? parseOptionalNumber(body.stability_calibers ?? body.stabilityCalibers)
+      : targetConfig.stabilityCalibers
+
+  const rawRecovery =
+    body.recovery_type !== undefined || body.recoveryType !== undefined
+      ? parseOptionalString(body.recovery_type ?? body.recoveryType)
+      : targetConfig.recoveryType
+
+  const recoveryType: ValidRecovery | null = VALID_RECOVERY_TYPES.includes(rawRecovery as any)
+    ? (rawRecovery as ValidRecovery)
+    : rawRecovery
+      ? 'parachute'
+      : null
+
+  const parachuteSizeMm =
+    body.parachute_size_mm !== undefined || body.parachuteSizeMm !== undefined
+      ? parseOptionalNumber(body.parachute_size_mm ?? body.parachuteSizeMm)
+      : targetConfig.parachuteSizeMm
+
+  const drogueParachuteSizeMm =
+    recoveryType === 'dual_deploy'
+      ? body.drogue_parachute_size_mm !== undefined || body.drogueParachuteSizeMm !== undefined
+        ? parseOptionalNumber(body.drogue_parachute_size_mm ?? body.drogueParachuteSizeMm)
+        : targetConfig.drogueParachuteSizeMm
+      : null
+
+  const motorMountDiameterMm =
+    body.motor_mount_diameter_mm !== undefined || body.motorMountDiameterMm !== undefined
+      ? parseOptionalNumber(body.motor_mount_diameter_mm ?? body.motorMountDiameterMm)
+      : targetConfig.motorMountDiameterMm
+
+  await db
+    .update(schema.rocketConfigurations)
+    .set({
+      lengthMm,
+      bodyDiameterMm,
+      airframeMaterial,
+      finCount,
+      dryMassG,
+      loadedMassG,
+      ballastG,
+      cgMm,
+      cpMm,
+      stabilityCalibers,
+      recoveryType,
+      parachuteSizeMm,
+      drogueParachuteSizeMm,
+      motorMountDiameterMm,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.rocketConfigurations.id, configId))
+
+  if (targetConfig.isCurrent && (lengthMm != null || bodyDiameterMm != null)) {
+    await db
+      .update(schema.rockets)
+      .set({
+        ...(lengthMm != null ? { lengthMm } : {}),
+        ...(bodyDiameterMm != null ? { bodyDiameterMm } : {}),
+        updatedAt: Date.now(),
+      })
+      .where(eq(schema.rockets.id, id))
+  }
+
+  return c.redirect(`/rockets/${id}`, 303)
+}
+
+rocketsRouter.post('/:id/configurations/:configId', handleUpdateConfiguration)
+rocketsRouter.post('/:id/configurations/:configId/edit', handleUpdateConfiguration)
 
 /**
  * POST /rockets/:id/configurations/:configId/set-current

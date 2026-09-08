@@ -53,6 +53,10 @@ export interface FlightDetailOptions {
     notes?: string | null
     softGateWarnings?: string[] | null
     proceededDespiteWarnings?: boolean | null
+    rsoUserId?: string | null
+    lcoUserId?: string | null
+    rsoName?: string | null
+    lcoName?: string | null
     createdAt?: number | null
   }
   config?: {
@@ -70,11 +74,15 @@ export interface FlightDetailOptions {
     parachuteSizeMm?: number | null
     drogueParachuteSizeMm?: number | null
     motorMountDiameterMm?: number | null
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
   } | null
   rocket?: {
     id: string
     name: string
     status?: string | null
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
   } | null
   motor?: {
     id: string
@@ -112,12 +120,19 @@ export interface FlightDetailOptions {
     displayName?: string | null
     email?: string | null
   } | null
+  rsoUser?: { id: string; displayName?: string | null; email?: string | null } | null
+  lcoUser?: { id: string; displayName?: string | null; email?: string | null } | null
   units?: string | null
   unitSystem?: 'metric' | 'imperial' | string | null
 }
 
 export interface PreflightFormProps {
-  rockets: Array<{ id: string; name: string }>
+  rockets: Array<{
+    id: string
+    name: string
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
+  }>
   configurations: Array<{
     id: string
     rocketId: string
@@ -125,6 +140,8 @@ export interface PreflightFormProps {
     stabilityCalibers?: number | null
     dryMassG?: number | null
     loadedMassG?: number | null
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
   }>
   motors: Array<{
     id: string
@@ -132,6 +149,7 @@ export interface PreflightFormProps {
     model: string
     impulseClass?: string | null
     delayS?: number | null
+    diameterMm?: number | null
   }>
   inventories?: Array<{
     id: string
@@ -150,10 +168,16 @@ export interface PreflightFormProps {
     name: string
     launchSiteId: string
   }>
+  users?: Array<{
+    id: string
+    displayName: string
+  }>
   flyerCertLevel?: number
   initialValues?: Record<string, any>
   warnings?: string[]
   error?: string
+  isEdit?: boolean
+  flightId?: string
 }
 
 /**
@@ -437,13 +461,16 @@ export function flightsListView(
  * Detailed Flight Log View (GET /flights/:id).
  */
 export function flightDetailView(options: FlightDetailOptions): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { flight, config, rocket, motor, site, event, flyer, units, unitSystem } = options
+  const { flight, config, rocket, motor, site, event, flyer, rsoUser, lcoUser, units, unitSystem } = options
   const isImperial = unitSystem === 'imperial' || units === 'ft' || units === 'feet'
   const warnings = flight.softGateWarnings || []
   const hasWarnings = warnings.length > 0 || Boolean(flight.proceededDespiteWarnings)
   const flightTitle = rocket?.name
     ? `${rocket.name} — Flight #${flight.flightNumber || 1}`
     : `Flight #${flight.flightNumber || 1}`
+
+  const rsoDisplay = flight.rsoName || rsoUser?.displayName || null
+  const lcoDisplay = flight.lcoName || lcoUser?.displayName || null
 
   return html`
     <div class="space-y-8">
@@ -485,6 +512,13 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
             </a>
           </div>
 
+          <a
+            href="/flights/${flight.id}/edit"
+            id="edit-flight-btn"
+            class="inline-flex items-center px-3.5 py-2 text-sm font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shadow-sm transition-colors"
+          >
+            ✏️ Edit Flight
+          </a>
           <a
             href="/flights/new"
             class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-md transition-colors"
@@ -533,6 +567,42 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
                 No preflight warnings were generated. Rocket stability, motor impulse vs flyer certification, and airspace waiver ceiling were all verified safe before launch.
               </p>
             `}
+        </div>
+
+        <!-- Duty Officers Sign-off Bar -->
+        <div class="mt-4 pt-3 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div class="flex items-center gap-4 flex-wrap">
+            <span class="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">Range Duty Officers:</span>
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/80">
+              <span class="text-slate-400 font-medium">RSO:</span>
+              <span class="font-semibold ${rsoDisplay ? 'text-blue-300' : 'text-slate-500'}">
+                ${rsoDisplay ? `🛡️ ${rsoDisplay}` : 'Unassigned'}
+              </span>
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700/80">
+              <span class="text-slate-400 font-medium">LCO:</span>
+              <span class="font-semibold ${lcoDisplay ? 'text-purple-300' : 'text-slate-500'}">
+                ${lcoDisplay ? `🚀 ${lcoDisplay}` : 'Unassigned'}
+              </span>
+            </div>
+          </div>
+          ${flight.proceededDespiteWarnings
+            ? html`<span class="text-amber-400 text-[11px] font-mono">⚠️ Safety Override Authorized</span>`
+            : html`<span class="text-emerald-400 text-[11px] font-mono">✓ Clear Range Sign-off</span>`}
+        </div>
+
+        <!-- Airframe Physical Clearance Verification (RSO / LCO) -->
+        <div class="mt-3 pt-3 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div class="flex items-center gap-4 flex-wrap">
+            <span class="text-slate-400 font-semibold uppercase tracking-wider text-[11px]">Physical Clearance (RSO/LCO):</span>
+            <span class="text-slate-300">
+              Length: <strong class="text-white font-mono">${(config?.lengthMm ?? rocket?.lengthMm) != null ? `${(config?.lengthMm ?? rocket?.lengthMm)} mm (${(((config?.lengthMm ?? rocket?.lengthMm)!) / 10).toFixed(1)} cm)` : '—'}</strong>
+            </span>
+            <span class="text-slate-300">
+              Body Diameter: <strong class="text-white font-mono">${(config?.bodyDiameterMm ?? rocket?.bodyDiameterMm) != null ? `${(config?.bodyDiameterMm ?? rocket?.bodyDiameterMm)} mm (${(((config?.bodyDiameterMm ?? rocket?.bodyDiameterMm)!) / 10).toFixed(1)} cm)` : '—'}</strong>
+            </span>
+          </div>
+          <span class="text-slate-400 text-[11px]">(Pad fit & launch rail clearance verified)</span>
         </div>
       </div>
 
@@ -607,6 +677,26 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dt class="text-xs text-slate-400">Configuration Version</dt>
               <dd class="mt-1 font-mono text-white">
                 ${config?.version != null ? `v${config.version}` : 'Default'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Airframe Length</dt>
+              <dd class="mt-1 font-mono text-slate-200">
+                ${(config?.lengthMm ?? rocket?.lengthMm) != null
+                  ? (isImperial
+                      ? `${(((config?.lengthMm ?? rocket?.lengthMm)!) / 304.8).toFixed(2)} ft (${(config?.lengthMm ?? rocket?.lengthMm)} mm)`
+                      : `${(config?.lengthMm ?? rocket?.lengthMm)} mm (${(((config?.lengthMm ?? rocket?.lengthMm)!) / 10).toFixed(1)} cm)`)
+                  : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Body Diameter</dt>
+              <dd class="mt-1 font-mono text-slate-200">
+                ${(config?.bodyDiameterMm ?? rocket?.bodyDiameterMm) != null
+                  ? (isImperial
+                      ? `${(((config?.bodyDiameterMm ?? rocket?.bodyDiameterMm)!) / 25.4).toFixed(2)} in (${(config?.bodyDiameterMm ?? rocket?.bodyDiameterMm)} mm)`
+                      : `${(config?.bodyDiameterMm ?? rocket?.bodyDiameterMm)} mm (${(((config?.bodyDiameterMm ?? rocket?.bodyDiameterMm)!) / 10).toFixed(1)} cm)`)
+                  : '—'}
               </dd>
             </div>
             <div>
@@ -756,6 +846,29 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
             </div>
           </dl>
         </div>
+
+        <!-- Card 5: Range Safety & Launch Duty Officers (R2) -->
+        <div class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-5 shadow-sm space-y-4 md:col-span-2">
+          <h2 class="text-base font-semibold text-white flex items-center gap-2 border-b border-slate-700/60 pb-3">
+            <span>🛡️ Range Safety & Launch Duty Officers</span>
+          </h2>
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div>
+              <dt class="text-xs text-slate-400">Range Safety Officer (RSO)</dt>
+              <dd class="mt-1 font-semibold text-white flex items-center gap-2">
+                <span>🛡️</span>
+                <span class="${rsoDisplay ? 'text-blue-300' : 'text-slate-400'}">${rsoDisplay || 'Unassigned / Open Range'}</span>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Launch Control Officer (LCO)</dt>
+              <dd class="mt-1 font-semibold text-white flex items-center gap-2">
+                <span>⚡</span>
+                <span class="${lcoDisplay ? 'text-purple-300' : 'text-slate-400'}">${lcoDisplay || 'Unassigned / Self-Launch'}</span>
+              </dd>
+            </div>
+          </dl>
+        </div>
       </div>
 
       <!-- Flight Notes -->
@@ -782,10 +895,13 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
     inventories = [],
     launchSites,
     launchEvents = [],
+    users = [],
     flyerCertLevel = 0,
     initialValues = {},
     warnings = [],
     error,
+    isEdit = false,
+    flightId = '',
   } = props
 
   return html`
@@ -795,13 +911,21 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
         <div class="flex items-center gap-2 text-xs text-slate-400 mb-1">
           <a href="/flights" class="hover:text-brand-400 transition-colors">← Flight Logbook</a>
           <span>/</span>
-          <span class="text-slate-300">New Flight</span>
+          ${isEdit
+            ? html`
+              <a href="/flights/${flightId}" class="hover:text-brand-400 transition-colors">Flight Details</a>
+              <span>/</span>
+              <span class="text-slate-300">Edit Flight</span>
+            `
+            : html`<span class="text-slate-300">New Flight</span>`}
         </div>
         <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
-          <span>🚀 Log Flight & Range Preflight Check</span>
+          <span>${isEdit ? '✏️ Edit Flight Log' : '🚀 Log Flight & Range Preflight Check'}</span>
         </h1>
         <p class="mt-1 text-sm text-slate-400">
-          Configure rocket, motor, and launch parameters. Live safety soft gates check certification, stability, and airspace ceiling.
+          ${isEdit
+            ? 'Update flight telemetry, motor selection, launch site, or rotating duty officers.'
+            : 'Configure rocket, motor, and launch parameters. Live safety soft gates check certification, stability, and airspace ceiling.'}
         </p>
       </div>
 
@@ -822,7 +946,7 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
       <form
         id="flight-form"
         method="POST"
-        action="/flights"
+        action="${isEdit ? `/flights/${flightId}/edit` : '/flights'}"
         class="space-y-8 bg-slate-800/40 border border-slate-700/60 rounded-xl p-6 shadow-sm"
       >
         <!-- Section 1: Flight Identity & Rocket Configuration -->
@@ -854,20 +978,83 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                   const name = rocket ? rocket.name : 'Airframe'
                   const calText = c.stabilityCalibers != null ? `${c.stabilityCalibers.toFixed(2)} cal` : 'calibers N/A'
                   const selected = initialValues['rocket_configuration_id'] === c.id ? 'selected' : ''
+                  const lengthVal = c.lengthMm ?? rocket?.lengthMm
+                  const diamVal = c.bodyDiameterMm ?? rocket?.bodyDiameterMm
+                  const geomLabel =
+                    lengthVal != null || diamVal != null
+                      ? ` | ${lengthVal != null ? `L: ${lengthVal}mm` : ''}${lengthVal != null && diamVal != null ? ', ' : ''}${diamVal != null ? `Ø: ${diamVal}mm` : ''}`
+                      : ''
                   return html`
-                    <option value="${c.id}" ${selected}>
-                      ${name} — Config v${c.version} (${calText})
+                    <option
+                      value="${c.id}"
+                      ${selected}
+                      data-length="${lengthVal ?? ''}"
+                      data-diameter="${diamVal ?? ''}"
+                    >
+                      ${name} — Config v${c.version} (${calText}${geomLabel})
                     </option>
                   `
                 })}
               </select>
+
+              <!-- Airframe Physical Geometry & Pad Fit Inspection Card (RSO / LCO) -->
+              <div id="preflight-airframe-geometry-card" class="mt-3 p-3.5 bg-slate-950/70 border border-slate-700/60 rounded-lg text-xs space-y-2">
+                <div class="flex items-center justify-between text-slate-300 font-semibold border-b border-slate-800/80 pb-1.5">
+                  <span class="flex items-center gap-1.5 text-white">
+                    <span>📐</span> Airframe Geometry & Pad Fit (RSO / LCO Review)
+                  </span>
+                  <span class="text-[10px] text-slate-400 font-normal">Physical Dimensions</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-slate-200">
+                  <div class="bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                    <div class="text-[11px] text-slate-400 font-medium">Overall Length</div>
+                    <div id="preflight-display-length" class="text-sm font-bold font-mono text-white mt-0.5">
+                      ${(() => {
+                        const selectedConfigId = initialValues['rocket_configuration_id']
+                        const selConfig = selectedConfigId ? configurations.find((c) => c.id === selectedConfigId) : configurations[0]
+                        const selRocket = selConfig ? rockets.find((r) => r.id === selConfig.rocketId) : rockets[0]
+                        const l = selConfig?.lengthMm ?? selRocket?.lengthMm
+                        return l != null ? `${l} mm (${(l / 10).toFixed(1)} cm)` : '—'
+                      })()}
+                    </div>
+                  </div>
+                  <div class="bg-slate-900/80 p-2.5 rounded border border-slate-800">
+                    <div class="text-[11px] text-slate-400 font-medium">Body Diameter</div>
+                    <div id="preflight-display-diameter" class="text-sm font-bold font-mono text-white mt-0.5">
+                      ${(() => {
+                        const selectedConfigId = initialValues['rocket_configuration_id']
+                        const selConfig = selectedConfigId ? configurations.find((c) => c.id === selectedConfigId) : configurations[0]
+                        const selRocket = selConfig ? rockets.find((r) => r.id === selConfig.rocketId) : rockets[0]
+                        const d = selConfig?.bodyDiameterMm ?? selRocket?.bodyDiameterMm
+                        return d != null ? `${d} mm (${(d / 10).toFixed(1)} cm)` : '—'
+                      })()}
+                    </div>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-400">
+                  Range Safety Officers (RSO) and Launch Control Officers (LCO) review: Ensure launch rail/rod length provides safe guide velocity (≥ 3× rocket length recommended) and pad blast standoff is adequate.
+                </p>
+              </div>
             </div>
 
-            <!-- Motor Selector -->
-            <div>
-              <label for="motor_id" class="block text-sm font-medium text-slate-200 mb-1">
-                Motor Model <span class="text-rose-400">*</span>
-              </label>
+            <!-- Motor Selector with Responsive Search Filter (R2) -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="motor_id" class="block text-sm font-medium text-slate-200">
+                  Motor Model <span class="text-rose-400">*</span>
+                </label>
+                <span id="motor-filter-count" class="text-xs text-slate-400 font-mono hidden"></span>
+              </div>
+              <!-- Fast Searchable Motor Filter Input -->
+              <div>
+                <input
+                  type="text"
+                  id="motor-search-filter"
+                  placeholder="Filter motors by designation, manufacturer, diameter (e.g. H128, AeroTech, 29mm)..."
+                  autocomplete="off"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 font-sans"
+                />
+              </div>
               <select
                 name="motor_id"
                 id="motor_id"
@@ -879,13 +1066,28 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
               >
                 <option value="">Select propulsion motor...</option>
+                <option id="motor-filter-no-match" value="" disabled class="text-slate-500 italic hidden">
+                  No matching motors found
+                </option>
                 ${motors.map((m) => {
                   const selected = initialValues['motor_id'] === m.id ? 'selected' : ''
                   const impulseLabel = m.impulseClass ? `[${m.impulseClass}]` : ''
                   const delayLabel = m.delayS != null ? `-${m.delayS}` : ''
+                  const diameterLabel = m.diameterMm != null ? ` (${m.diameterMm}mm)` : ''
+                  const diameterSearch = m.diameterMm != null ? `${m.diameterMm}mm ${m.diameterMm}` : ''
+                  const normalizedModel = m.model.replace(/[-_]/g, '')
+                  const searchTerms = `${m.manufacturer} ${m.model} ${normalizedModel} ${m.impulseClass || ''} ${delayLabel} ${diameterSearch}`.toLowerCase()
                   return html`
-                    <option value="${m.id}" ${selected}>
-                      ${m.manufacturer} ${m.model}${delayLabel} ${impulseLabel}
+                    <option
+                      value="${m.id}"
+                      ${selected}
+                      data-search="${searchTerms}"
+                      data-mfr="${m.manufacturer}"
+                      data-model="${m.model}"
+                      data-diameter="${m.diameterMm ?? ''}"
+                      data-impulse="${m.impulseClass ?? ''}"
+                    >
+                      ${m.manufacturer} ${m.model}${delayLabel} ${impulseLabel}${diameterLabel}
                     </option>
                   `
                 })}
@@ -992,6 +1194,88 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                   `
                 })}
               </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2b: Range Safety & Duty Officers -->
+        <div class="space-y-4">
+          <h2 class="text-base font-semibold text-white border-b border-slate-700/60 pb-2 flex items-center justify-between">
+            <span class="flex items-center gap-2">
+              <span>🛡️</span> Range Safety & Duty Officers
+            </span>
+            <span class="text-xs font-normal text-slate-400">Duty officers rotate throughout meet</span>
+          </h2>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Range Safety Officer (RSO) -->
+            <div>
+              <label for="rso_name" class="block text-sm font-medium text-slate-200 mb-1">
+                Range Safety Officer (RSO) <span class="text-xs text-slate-400 font-normal">(Name or callsign)</span>
+              </label>
+              <input
+                type="text"
+                name="rso_name"
+                id="rso_name"
+                placeholder="e.g. Chief Safety Dan or TRA #4102"
+                value="${initialValues['rso_name'] ?? initialValues['rsoName'] ?? ''}"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+              />
+              ${users && users.length > 0
+                ? html`
+                  <select
+                    name="rso_user_id"
+                    id="rso_user_id"
+                    class="mt-1.5 w-full bg-slate-900/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    onchange="if(this.value){const t=this.options[this.selectedIndex].text;const n=document.getElementById('rso_name');if(n&&!n.value)n.value=t;}"
+                  >
+                    <option value="">-- Link registered flyer (optional) --</option>
+                    ${users.map((u) => {
+                      const selected =
+                        (initialValues['rso_user_id'] ?? initialValues['rsoUserId']) === u.id ? 'selected' : ''
+                      return html`<option value="${u.id}" ${selected}>${u.displayName}</option>`
+                    })}
+                  </select>
+                `
+                : html`<input type="hidden" name="rso_user_id" id="rso_user_id" value="${initialValues['rso_user_id'] ?? initialValues['rsoUserId'] ?? ''}" />`}
+              <p class="text-[11px] text-slate-400 mt-1">
+                Enter active RSO name/callsign or select from registered club members.
+              </p>
+            </div>
+
+            <!-- Launch Control Officer (LCO) -->
+            <div>
+              <label for="lco_name" class="block text-sm font-medium text-slate-200 mb-1">
+                Launch Control Officer (LCO) <span class="text-xs text-slate-400 font-normal">(Name or callsign)</span>
+              </label>
+              <input
+                type="text"
+                name="lco_name"
+                id="lco_name"
+                placeholder="e.g. Launch Controller Alice"
+                value="${initialValues['lco_name'] ?? initialValues['lcoName'] ?? ''}"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+              />
+              ${users && users.length > 0
+                ? html`
+                  <select
+                    name="lco_user_id"
+                    id="lco_user_id"
+                    class="mt-1.5 w-full bg-slate-900/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    onchange="if(this.value){const t=this.options[this.selectedIndex].text;const n=document.getElementById('lco_name');if(n&&!n.value)n.value=t;}"
+                  >
+                    <option value="">-- Link registered flyer (optional) --</option>
+                    ${users.map((u) => {
+                      const selected =
+                        (initialValues['lco_user_id'] ?? initialValues['lcoUserId']) === u.id ? 'selected' : ''
+                      return html`<option value="${u.id}" ${selected}>${u.displayName}</option>`
+                    })}
+                  </select>
+                `
+                : html`<input type="hidden" name="lco_user_id" id="lco_user_id" value="${initialValues['lco_user_id'] ?? initialValues['lcoUserId'] ?? ''}" />`}
+              <p class="text-[11px] text-slate-400 mt-1">
+                Enter active LCO name/callsign or select from registered club members.
+              </p>
             </div>
           </div>
         </div>
@@ -1166,7 +1450,7 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
         <!-- Form Actions -->
         <div class="pt-4 border-t border-slate-700/60 flex items-center justify-between">
           <a
-            href="/flights"
+            href="${isEdit ? `/flights/${flightId}` : '/flights'}"
             class="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors"
           >
             Cancel
@@ -1175,10 +1459,123 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
             type="submit"
             class="inline-flex items-center px-6 py-2.5 text-sm font-bold rounded-lg bg-brand-400 hover:bg-brand-300 text-slate-950 shadow-md transition-colors"
           >
-            <span class="mr-1.5 font-extrabold">+</span> Submit Flight Log
+            <span class="mr-1.5 font-extrabold">${isEdit ? '💾' : '+'}</span>
+            ${isEdit ? 'Save Flight Changes' : 'Submit Flight Log'}
           </button>
         </div>
       </form>
+
+      <!-- Client-side Motor Search Filter Script (R2) -->
+      <script>
+        (function() {
+          function initMotorSearchFilter() {
+            var filterInput = document.getElementById('motor-search-filter');
+            var motorSelect = document.getElementById('motor_id');
+            var countBadge = document.getElementById('motor-filter-count');
+            var noMatchOpt = document.getElementById('motor-filter-no-match');
+            if (!filterInput || !motorSelect) return;
+
+            function filterMotors() {
+              var rawQuery = (filterInput.value || '').trim().toLowerCase();
+              var terms = rawQuery ? rawQuery.split(/\s+/).filter(Boolean) : [];
+              var options = motorSelect.querySelectorAll('option');
+              var matchCount = 0;
+              var totalCount = 0;
+
+              options.forEach(function(opt) {
+                // Skip placeholder and no-match dummy options
+                if (!opt.value || opt.id === 'motor-filter-no-match') return;
+                totalCount++;
+
+                if (terms.length === 0) {
+                  opt.hidden = false;
+                  opt.style.display = '';
+                  matchCount++;
+                  return;
+                }
+
+                var searchIndex = (opt.getAttribute('data-search') || opt.textContent || '').toLowerCase();
+                var matches = terms.every(function(term) {
+                  return searchIndex.indexOf(term) !== -1;
+                });
+
+                if (matches) {
+                  opt.hidden = false;
+                  opt.style.display = '';
+                  matchCount++;
+                } else {
+                  opt.hidden = true;
+                  opt.style.display = 'none';
+                }
+              });
+
+              if (noMatchOpt) {
+                var showNoMatch = terms.length > 0 && matchCount === 0;
+                noMatchOpt.hidden = !showNoMatch;
+                noMatchOpt.style.display = showNoMatch ? '' : 'none';
+              }
+
+              if (countBadge) {
+                if (terms.length > 0) {
+                  countBadge.textContent = matchCount + ' of ' + totalCount + ' motors';
+                  countBadge.classList.remove('hidden');
+                } else {
+                  countBadge.textContent = '';
+                  countBadge.classList.add('hidden');
+                }
+              }
+            }
+
+            filterInput.addEventListener('input', filterMotors);
+
+            filterInput.addEventListener('keydown', function(e) {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                var visibleOpts = Array.from(motorSelect.querySelectorAll('option')).filter(function(opt) {
+                  return opt.value && !opt.hidden && opt.style.display !== 'none' && opt.id !== 'motor-filter-no-match';
+                });
+                if (visibleOpts.length === 1) {
+                  motorSelect.value = visibleOpts[0].value;
+                  motorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+              } else if (e.key === 'Escape') {
+                filterInput.value = '';
+                filterMotors();
+              }
+            });
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initMotorSearchFilter);
+          } else {
+            initMotorSearchFilter();
+          }
+        })();
+
+        function updatePreflightGeometryDisplay() {
+          var sel = document.getElementById('rocket_configuration_id');
+          var lenEl = document.getElementById('preflight-display-length');
+          var diamEl = document.getElementById('preflight-display-diameter');
+          if (!sel || !lenEl || !diamEl) return;
+          var opt = sel.options[sel.selectedIndex];
+          if (opt && opt.dataset && (opt.dataset.length || opt.dataset.diameter)) {
+            var l = opt.dataset.length ? parseFloat(opt.dataset.length) : null;
+            var d = opt.dataset.diameter ? parseFloat(opt.dataset.diameter) : null;
+            lenEl.textContent = l != null && !isNaN(l) ? l + ' mm (' + (l / 10).toFixed(1) + ' cm)' : '—';
+            diamEl.textContent = d != null && !isNaN(d) ? d + ' mm (' + (d / 10).toFixed(1) + ' cm)' : '—';
+          } else {
+            lenEl.textContent = '—';
+            diamEl.textContent = '—';
+          }
+        }
+        (function() {
+          var sel = document.getElementById('rocket_configuration_id');
+          if (sel) {
+            sel.addEventListener('change', updatePreflightGeometryDisplay);
+            updatePreflightGeometryDisplay();
+          }
+        })();
+      </script>
     </div>
   `
 }

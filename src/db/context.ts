@@ -7,7 +7,7 @@
  * data isolation are satisfied across all rocketry workflows.
  */
 
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import * as schema from './schema'
 import { hashPassword } from '../services/auth'
@@ -132,15 +132,20 @@ async function buildFlyerContext(
   const userCerts = await db
     .select()
     .from(schema.certifications)
-    .where(eq(schema.certifications.userId, user.id))
+    .where(
+      and(
+        eq(schema.certifications.userId, user.id),
+        isNull(schema.certifications.deletedAt),
+      ),
+    )
 
   let maxCertLevel = 0
   let primaryCertNumber: string | null = null
   let primaryCertBody: string | null = null
 
   for (const cert of userCerts) {
-    if (typeof cert.level === 'number' && cert.level > maxCertLevel) {
-      maxCertLevel = cert.level
+    if (typeof cert.level === 'number' && (cert.level > maxCertLevel || primaryCertBody === null)) {
+      maxCertLevel = Math.max(maxCertLevel, cert.level)
       primaryCertNumber = cert.certNumber
       primaryCertBody = cert.certifyingBody
     }

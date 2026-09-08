@@ -10,7 +10,7 @@ import { html } from 'hono/html'
 import type { HtmlEscapedString } from 'hono/utils/html'
 import type { ActiveFlyer } from '../db/context'
 
-export type NavTab = 'dashboard' | 'flights' | 'rockets' | 'motors' | 'inventory' | 'sites' | 'events' | 'admin'
+export type NavTab = 'dashboard' | 'flights' | 'rockets' | 'motors' | 'inventory' | 'sites' | 'events' | 'admin' | 'profile'
 
 export interface PageLayoutOptions {
   title: string
@@ -99,7 +99,7 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
               ? html`
                 <!-- Active Flyer Status Pill & User Menu -->
                 <div class="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-800 text-sm">
-                  <div class="flex items-center gap-2 py-1 px-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                  <a href="/profile" class="flex items-center gap-2 py-1 px-2.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-brand-700 transition-colors" title="View Profile and Settings">
                     <span class="w-6 h-6 rounded-full bg-brand-950 text-brand-400 border border-brand-800/80 flex items-center justify-center text-xs font-bold">
                       ${user.displayName.charAt(0)}
                     </span>
@@ -107,7 +107,7 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
                     <span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-950 text-brand-300 border border-brand-800/60 font-mono font-semibold" title="Certification Level">
                       L${user.maxCertLevel}
                     </span>
-                  </div>
+                  </a>
                   <a href="/login" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition-colors" title="Switch pilot or account">
                     Switch
                   </a>
@@ -139,9 +139,9 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
       ${
         user
           ? html`
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-950 text-brand-300 border border-brand-800/60 font-mono">
+            <a href="/profile" class="text-[10px] px-1.5 py-0.5 rounded bg-brand-950 text-brand-300 border border-brand-800/60 font-mono hover:border-brand-700 transition-colors" title="Profile">
               ${user.displayName.split(' ')[0]} (L${user.maxCertLevel})
-            </span>
+            </a>
             <a href="/logout" class="text-xs text-rose-400 font-semibold px-1">Exit</a>
           `
           : html`<a href="/login" class="text-xs text-brand-400 font-semibold">Sign In</a>`
@@ -179,6 +179,10 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
     <a href="/sites" class="${mobileNavLinkClass('sites')} flex-1 text-center">
       <span class="text-lg leading-none mb-1 block">📍</span>
       <span>Sites</span>
+    </a>
+    <a href="/profile" class="${mobileNavLinkClass('profile')} flex-1 text-center">
+      <span class="text-lg leading-none mb-1 block">👤</span>
+      <span>Profile</span>
     </a>
     ${user?.role === 'admin' ? html`
       <a href="/admin/users" class="${mobileNavLinkClass('admin')} flex-1 text-center">

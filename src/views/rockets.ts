@@ -30,6 +30,8 @@ export interface RocketConfigSummary {
   motorMountDiameterMm?: number | null
   airframeMaterial?: string | null
   finCount?: number | null
+  lengthMm?: number | null
+  bodyDiameterMm?: number | null
   isCurrent?: boolean
   createdAt?: number | null
 }
@@ -48,6 +50,8 @@ export interface RocketDetailProps {
     name: string
     status: RocketStatusType | string
     ownerId: string
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
     createdAt?: number | null
     updatedAt?: number | null
   }
@@ -332,6 +336,38 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
           </div>
         </div>
 
+        <!-- Airframe Physical Specifications Card -->
+        <div class="mt-4 pt-4 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-3">
+            <span class="text-slate-400 block text-[11px] font-medium">Overall Length</span>
+            <span class="text-white font-bold text-base mt-0.5 block font-mono">
+              ${(activeConfig?.lengthMm ?? rocket.lengthMm) != null
+                ? `${activeConfig?.lengthMm ?? rocket.lengthMm} mm (${(((activeConfig?.lengthMm ?? rocket.lengthMm)!) / 10).toFixed(1)} cm)`
+                : '—'}
+            </span>
+          </div>
+          <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-3">
+            <span class="text-slate-400 block text-[11px] font-medium">Body Diameter</span>
+            <span class="text-white font-bold text-base mt-0.5 block font-mono">
+              ${(activeConfig?.bodyDiameterMm ?? rocket.bodyDiameterMm) != null
+                ? `${activeConfig?.bodyDiameterMm ?? rocket.bodyDiameterMm} mm (${(((activeConfig?.bodyDiameterMm ?? rocket.bodyDiameterMm)!) / 10).toFixed(1)} cm)`
+                : '—'}
+            </span>
+          </div>
+          <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-3">
+            <span class="text-slate-400 block text-[11px] font-medium">Airframe Material</span>
+            <span class="text-white font-medium text-sm mt-0.5 block truncate">
+              ${activeConfig?.airframeMaterial || '—'}
+            </span>
+          </div>
+          <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-3">
+            <span class="text-slate-400 block text-[11px] font-medium">Fin Count</span>
+            <span class="text-white font-bold text-base mt-0.5 block font-mono">
+              ${activeConfig?.finCount != null ? `${activeConfig.finCount} fins` : '—'}
+            </span>
+          </div>
+        </div>
+
         <!-- Current Active Configuration Spotlight -->
         ${activeConfig
           ? html`
@@ -348,7 +384,33 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                   </span>
                 </div>
 
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
+                    <div class="text-xs text-slate-400">Length</div>
+                    <div class="mt-1 text-base font-bold text-white font-mono">
+                      ${(activeConfig.lengthMm ?? rocket.lengthMm) != null
+                        ? `${activeConfig.lengthMm ?? rocket.lengthMm} mm`
+                        : '—'}
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">
+                      ${(activeConfig.lengthMm ?? rocket.lengthMm) != null
+                        ? `${(((activeConfig.lengthMm ?? rocket.lengthMm)!) / 10).toFixed(1)} cm`
+                        : 'Nose to Nozzle'}
+                    </div>
+                  </div>
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
+                    <div class="text-xs text-slate-400">Body Diameter</div>
+                    <div class="mt-1 text-base font-bold text-white font-mono">
+                      ${(activeConfig.bodyDiameterMm ?? rocket.bodyDiameterMm) != null
+                        ? `${activeConfig.bodyDiameterMm ?? rocket.bodyDiameterMm} mm`
+                        : '—'}
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">
+                      ${(activeConfig.bodyDiameterMm ?? rocket.bodyDiameterMm) != null
+                        ? `${(((activeConfig.bodyDiameterMm ?? rocket.bodyDiameterMm)!) / 10).toFixed(1)} cm`
+                        : 'Max Outer Tube'}
+                    </div>
+                  </div>
                   <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
                     <div class="text-xs text-slate-400">Stability Margin</div>
                     <div class="mt-1">
@@ -434,6 +496,8 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                     <tr>
                       <th scope="col" class="px-4 py-3">Version</th>
                       <th scope="col" class="px-4 py-3">Active Status</th>
+                      <th scope="col" class="px-4 py-3">Length (mm)</th>
+                      <th scope="col" class="px-4 py-3">Body Diam (mm)</th>
                       <th scope="col" class="px-4 py-3">Dry Mass (g)</th>
                       <th scope="col" class="px-4 py-3">Loaded Mass (g)</th>
                       <th scope="col" class="px-4 py-3" title="Reference datum: Distance from Nose Cone Tip">CG (mm)*</th>
@@ -472,6 +536,16 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                                     </button>
                                   </form>
                                 `}
+                          </td>
+
+                          <!-- Length (mm) -->
+                          <td class="px-4 py-3.5 whitespace-nowrap font-mono">
+                            ${cfg.lengthMm != null ? `${cfg.lengthMm} mm` : (rocket.lengthMm != null ? `${rocket.lengthMm} mm` : '—')}
+                          </td>
+
+                          <!-- Body Diameter (mm) -->
+                          <td class="px-4 py-3.5 whitespace-nowrap font-mono">
+                            ${cfg.bodyDiameterMm != null ? `${cfg.bodyDiameterMm} mm` : (rocket.bodyDiameterMm != null ? `${rocket.bodyDiameterMm} mm` : '—')}
                           </td>
 
                           <!-- Dry Mass (g) -->
@@ -619,6 +693,40 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
                 placeholder="e.g. Kraft phenolic, fiberglass, carbon"
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
               />
+            </div>
+
+            <!-- Length (mm) -->
+            <div>
+              <label for="length_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Overall Length (mm)
+              </label>
+              <input
+                type="number"
+                id="length_mm"
+                name="length_mm"
+                min="0"
+                step="any"
+                placeholder="e.g. 1450.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Total nose-to-nozzle length in millimeters</p>
+            </div>
+
+            <!-- Body Diameter (mm) -->
+            <div>
+              <label for="body_diameter_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Body Diameter (mm)
+              </label>
+              <input
+                type="number"
+                id="body_diameter_mm"
+                name="body_diameter_mm"
+                min="0"
+                step="any"
+                placeholder="e.g. 76.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Maximum outer tube diameter in millimeters</p>
             </div>
           </div>
         </div>
@@ -916,7 +1024,7 @@ export function newConfigFormView(
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <!-- Airframe Material -->
-          <div class="sm:col-span-2">
+          <div>
             <label for="airframe_material" class="block text-xs font-semibold text-slate-300 mb-1">
               Airframe Material
             </label>
@@ -926,6 +1034,40 @@ export function newConfigFormView(
               name="airframe_material"
               value="${previousConfig?.airframeMaterial ?? ''}"
               placeholder="e.g. Kraft phenolic, fiberglass, carbon"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+            />
+          </div>
+
+          <!-- Overall Length (mm) -->
+          <div>
+            <label for="length_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+              Overall Length (mm)
+            </label>
+            <input
+              type="number"
+              id="length_mm"
+              name="length_mm"
+              min="0"
+              step="any"
+              value="${previousConfig?.lengthMm != null ? String(previousConfig.lengthMm) : ''}"
+              placeholder="e.g. 1600.0"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+            />
+          </div>
+
+          <!-- Body Diameter (mm) -->
+          <div>
+            <label for="body_diameter_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+              Body Diameter (mm)
+            </label>
+            <input
+              type="number"
+              id="body_diameter_mm"
+              name="body_diameter_mm"
+              min="0"
+              step="any"
+              value="${previousConfig?.bodyDiameterMm != null ? String(previousConfig.bodyDiameterMm) : ''}"
+              placeholder="e.g. 98.0"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
             />
           </div>
@@ -1168,7 +1310,13 @@ export const newConfigurationFormView = newConfigFormView
  * 5. Edit Rocket Airframe Form View: Modify airframe name and status.
  */
 export function editRocketFormView(
-  rocket: { id: string; name: string; status: string },
+  rocket: {
+    id: string
+    name: string
+    status: string
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
+  },
   errorMessage?: string,
 ): HtmlEscapedString | Promise<HtmlEscapedString> {
   return html`
@@ -1183,7 +1331,7 @@ export function editRocketFormView(
 
       <div>
         <h1 class="text-2xl font-extrabold text-white tracking-tight">Edit Rocket Airframe</h1>
-        <p class="mt-1 text-sm text-slate-400">Update airframe identity and operational readiness status.</p>
+        <p class="mt-1 text-sm text-slate-400">Update airframe identity, dimensions, and operational readiness status.</p>
       </div>
 
       ${errorMessage
@@ -1224,6 +1372,40 @@ export function editRocketFormView(
             <option value="damaged" ${rocket.status === 'damaged' ? 'selected' : ''}>Damaged</option>
             <option value="retired" ${rocket.status === 'retired' ? 'selected' : ''}>Retired</option>
           </select>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="length_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+              Overall Length (mm)
+            </label>
+            <input
+              type="number"
+              id="length_mm"
+              name="length_mm"
+              min="0"
+              step="any"
+              value="${rocket.lengthMm != null ? String(rocket.lengthMm) : ''}"
+              placeholder="e.g. 1450.0"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+            />
+          </div>
+
+          <div>
+            <label for="body_diameter_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+              Body Diameter (mm)
+            </label>
+            <input
+              type="number"
+              id="body_diameter_mm"
+              name="body_diameter_mm"
+              min="0"
+              step="any"
+              value="${rocket.bodyDiameterMm != null ? String(rocket.bodyDiameterMm) : ''}"
+              placeholder="e.g. 76.0"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+            />
+          </div>
         </div>
 
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">

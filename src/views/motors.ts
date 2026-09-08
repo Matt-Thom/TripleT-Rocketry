@@ -710,6 +710,27 @@ export function inventoryRowFragment(item: InventoryItemWithMotor): HtmlEscapedS
 
       <!-- Actions -->
       <td class="whitespace-nowrap py-3.5 pl-3 pr-4 sm:pr-6 text-right">
+        ${item.quantityOnHand <= 0
+          ? html`
+              <form
+                action="/inventory/${item.id}/dismiss"
+                method="POST"
+                class="inline-block mr-2"
+                hx-post="/inventory/${item.id}/dismiss"
+                hx-target="#inventory-row-${item.id}"
+                hx-swap="outerHTML"
+              >
+                <button
+                  type="submit"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 transition-colors cursor-pointer"
+                  title="Dismiss zero-quantity motor from active inventory view"
+                >
+                  <span>🗑️</span>
+                  <span>Dismiss</span>
+                </button>
+              </form>
+            `
+          : ''}
         <a
           href="/motors/${item.motorId}"
           class="text-xs font-semibold text-brand-400 hover:text-brand-300 hover:underline"

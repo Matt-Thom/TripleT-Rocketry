@@ -279,7 +279,8 @@ export async function authMiddleware(c: Context, next: Next) {
   }
 
   // 7. Test/local dev environment fallback (only for cookieless requests when not explicitly invalid)
-  if (!flyer && !invalidSession) {
+  // Exclude /admin paths so unauthenticated requests cleanly redirect to /login (HTTP 302)
+  if (!flyer && !invalidSession && !path.startsWith('/admin')) {
     const isExplicitNoAuth = c.req.header('x-no-auth') === 'true'
 
     if (!isExplicitNoAuth && isTestOrLocal && isCookieless) {

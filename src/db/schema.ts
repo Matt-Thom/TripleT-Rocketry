@@ -33,8 +33,8 @@ import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 // --- Domain enumerations (mirror app/models/enums.py) ----------------------
 
-export const CERTIFYING_BODY = ['NAR', 'TRA'] as const
-export const CERT_LEVEL = [1, 2, 3] as const
+export const CERTIFYING_BODY = ['NAR', 'TRA', 'ARA'] as const
+export const CERT_LEVEL = [0, 1, 2, 3] as const
 export const IMPULSE_CLASS = [
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
   'I', 'J', 'K', 'L', 'M', 'N', 'O',
@@ -175,6 +175,8 @@ export const rockets = sqliteTable(
       .references(() => users.id),
     name: text('name').notNull(),
     status: text('status', { enum: ROCKET_STATUS }).notNull().default('in_build'),
+    lengthMm: real('length_mm'),
+    bodyDiameterMm: real('body_diameter_mm'),
     ...auditColumns,
   },
   (t) => [
@@ -203,6 +205,8 @@ export const rocketConfigurations = sqliteTable(
     parachuteSizeMm: real('parachute_size_mm'),
     drogueParachuteSizeMm: real('drogue_parachute_size_mm'),
     motorMountDiameterMm: real('motor_mount_diameter_mm'),
+    lengthMm: real('length_mm'),
+    bodyDiameterMm: real('body_diameter_mm'),
     isCurrent: integer('is_current', { mode: 'boolean' }).notNull().default(true),
     ...auditColumns,
   },
@@ -347,6 +351,8 @@ export const launchEvents = sqliteTable(
     endsOn: text('ends_on'),
     rsoUserId: text('rso_user_id').references(() => users.id),
     lcoUserId: text('lco_user_id').references(() => users.id),
+    launchDirector: text('launch_director'),
+    tripoliPrefect: text('tripoli_prefect'),
     weatherNotes: text('weather_notes'),
     padCount: integer('pad_count'),
     ...auditColumns,
@@ -388,6 +394,10 @@ export const flights = sqliteTable(
     })
       .notNull()
       .default(false),
+    rsoUserId: text('rso_user_id').references(() => users.id),
+    lcoUserId: text('lco_user_id').references(() => users.id),
+    rsoName: text('rso_name'),
+    lcoName: text('lco_name'),
     ...auditColumns,
   },
   (t) => [
@@ -477,5 +487,37 @@ export const userCredentials = sqliteTable(
     lastUsedAt: integer('last_used_at'),
   },
   (t) => [index('ix_user_credentials_user_id').on(t.userId)],
+)
+
+export const storageSites = sqliteTable(
+  'storage_sites',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    location: text('location'),
+    capacityKg: real('capacity_kg').notNull().default(0),
+    permitNumber: text('permit_number'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [index('ix_storage_sites_user_id').on(t.userId)],
+)
+
+export const clubMemberships = sqliteTable(
+  'club_memberships',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    clubName: text('club_name').notNull(),
+    membershipNumber: text('membership_number'),
+    expiresOn: text('expires_on'),
+    ...auditColumns,
+  },
+  (t) => [index('ix_club_memberships_user_id').on(t.userId)],
 )
 

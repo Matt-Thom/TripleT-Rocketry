@@ -23,6 +23,8 @@ export async function truncateDb(): Promise<void> {
     'motor_inventories',
     'rocket_configurations',
     'certifications',
+    'club_memberships',
+    'storage_sites',
     'rockets',
     'motors',
     'launch_sites',
@@ -133,14 +135,16 @@ export async function seedTestMotor(
   overrides: Partial<typeof schema.motors.$inferInsert> = {},
 ) {
   const db = getDb()
+  const impulse = overrides.impulseClass ?? 'G'
+  const defaultModel = impulse === 'G' ? 'G80W' : `${impulse}${Math.floor(Math.random() * 900 + 100)}W`
   const [motor] = await db
     .insert(schema.motors)
     .values({
       manufacturer: overrides.manufacturer ?? 'AeroTech',
-      model: overrides.model ?? `H${Math.floor(Math.random() * 900 + 100)}W`,
-      impulseClass: overrides.impulseClass ?? 'H',
-      totalImpulseNs: overrides.totalImpulseNs ?? 200.0,
-      averageThrustN: overrides.averageThrustN ?? 128.0,
+      model: overrides.model ?? defaultModel,
+      impulseClass: impulse,
+      totalImpulseNs: overrides.totalImpulseNs ?? (impulse === 'G' ? 120.0 : 200.0),
+      averageThrustN: overrides.averageThrustN ?? (impulse === 'G' ? 80.0 : 128.0),
       delayS: overrides.delayS ?? 10,
       propellantType: overrides.propellantType ?? 'apcp',
       certifyingOrg: overrides.certifyingOrg ?? 'BOTH',
@@ -285,4 +289,46 @@ export async function seedTestTransaction(
     })
     .returning()
   return tx
+}
+
+/**
+ * Seed a physical propellant storage site or magazine.
+ */
+export async function seedTestStorageSite(
+  userId: string,
+  overrides: Partial<typeof schema.storageSites.$inferInsert> = {},
+) {
+  const db = getDb()
+  const [site] = await db
+    .insert(schema.storageSites)
+    .values({
+      userId,
+      name: overrides.name ?? 'Explosives Magazine Alpha',
+      location: overrides.location ?? 'Bunker 1',
+      capacityKg: overrides.capacityKg ?? 2.5,
+      ...overrides,
+    })
+    .returning()
+  return site
+}
+
+/**
+ * Seed a club membership record for a flyer.
+ */
+export async function seedTestClubMembership(
+  userId: string,
+  overrides: Partial<typeof schema.clubMemberships.$inferInsert> = {},
+) {
+  const db = getDb()
+  const [membership] = await db
+    .insert(schema.clubMemberships)
+    .values({
+      userId,
+      clubName: overrides.clubName ?? 'Southern Area Rocketry Club',
+      membershipNumber: overrides.membershipNumber ?? 'SARC-1001',
+      expiresOn: overrides.expiresOn ?? '2027-12-31',
+      ...overrides,
+    })
+    .returning()
+  return membership
 }

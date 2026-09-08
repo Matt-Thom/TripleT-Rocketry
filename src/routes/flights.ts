@@ -11,7 +11,7 @@
  */
 
 import { Hono } from 'hono'
-import { desc, eq, sql } from 'drizzle-orm'
+import { desc, eq, sql, inArray } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { getActiveFlyer } from '../db/context'
@@ -126,9 +126,16 @@ flightsRouter.get('/new', async (c) => {
   const db = drizzle(c.env.DB, { schema })
   const activeFlyer = await getActiveFlyer(db)
 
-  const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents] =
+  const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
     await Promise.all([
-      db.select({ id: schema.rockets.id, name: schema.rockets.name }).from(schema.rockets),
+      db
+        .select({
+          id: schema.rockets.id,
+          name: schema.rockets.name,
+          lengthMm: schema.rockets.lengthMm,
+          bodyDiameterMm: schema.rockets.bodyDiameterMm,
+        })
+        .from(schema.rockets),
       db
         .select({
           id: schema.rocketConfigurations.id,
@@ -137,6 +144,8 @@ flightsRouter.get('/new', async (c) => {
           stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
           dryMassG: schema.rocketConfigurations.dryMassG,
           loadedMassG: schema.rocketConfigurations.loadedMassG,
+          lengthMm: schema.rocketConfigurations.lengthMm,
+          bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
         })
         .from(schema.rocketConfigurations),
       db
@@ -146,6 +155,7 @@ flightsRouter.get('/new', async (c) => {
           model: schema.motors.model,
           impulseClass: schema.motors.impulseClass,
           delayS: schema.motors.delayS,
+          diameterMm: schema.motors.diameterMm,
         })
         .from(schema.motors)
         .orderBy(schema.motors.manufacturer, schema.motors.model),
@@ -177,6 +187,14 @@ flightsRouter.get('/new', async (c) => {
         })
         .from(schema.launchEvents)
         .orderBy(schema.launchEvents.name),
+      db
+        .select({
+          id: schema.users.id,
+          displayName: schema.users.displayName,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.isActive, true))
+        .orderBy(schema.users.displayName),
     ])
 
   const inventories = inventoryRows.map((inv) => ({
@@ -194,6 +212,7 @@ flightsRouter.get('/new', async (c) => {
     inventories,
     launchSites,
     launchEvents,
+    users,
     flyerCertLevel: activeFlyer.maxCertLevel,
   })
 
@@ -242,7 +261,11 @@ flightsRouter.post('/preflight-check', async (c) => {
   let stabilityCalibers: number | null = null
   if (rocketConfigId) {
     const [cfg] = await db
-      .select({ stabilityCalibers: schema.rocketConfigurations.stabilityCalibers })
+      .select({
+        stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
+        lengthMm: schema.rocketConfigurations.lengthMm,
+        bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
+      })
       .from(schema.rocketConfigurations)
       .where(eq(schema.rocketConfigurations.id, rocketConfigId))
     if (cfg && cfg.stabilityCalibers !== null && cfg.stabilityCalibers !== undefined) {
@@ -398,6 +421,53 @@ flightsRouter.post('/', async (c) => {
     }
   }
 
+  // Duty officer extractions
+  const rsoNameRaw = body['rso_name'] ? String(body['rso_name']).trim() : null
+  const lcoNameRaw = body['lco_name'] ? String(body['lco_name']).trim() : null
+  const rsoUserIdRaw = body['rso_user_id'] ? String(body['rso_user_id']).trim() : null
+  const lcoUserIdRaw = body['lco_user_id'] ? String(body['lco_user_id']).trim() : null
+
+  // Validate and sanitize candidate officer IDs against users table to prevent FK crashes
+  let sanitizedRsoUserId: string | null = null
+  let sanitizedLcoUserId: string | null = null
+
+  const candidateOfficerIds = [rsoUserIdRaw, lcoUserIdRaw].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  )
+
+  const validUserMap = new Map<string, string>()
+  if (candidateOfficerIds.length > 0) {
+    const matchingUsers = await db
+      .select({ id: schema.users.id, displayName: schema.users.displayName })
+      .from(schema.users)
+      .where(inArray(schema.users.id, candidateOfficerIds))
+
+    for (const u of matchingUsers) {
+      validUserMap.set(u.id, u.displayName)
+    }
+
+    if (rsoUserIdRaw && validUserMap.has(rsoUserIdRaw)) {
+      sanitizedRsoUserId = rsoUserIdRaw
+    }
+    if (lcoUserIdRaw && validUserMap.has(lcoUserIdRaw)) {
+      sanitizedLcoUserId = lcoUserIdRaw
+    }
+  }
+
+  const rsoName =
+    rsoNameRaw && rsoNameRaw.length > 0
+      ? rsoNameRaw
+      : sanitizedRsoUserId
+        ? validUserMap.get(sanitizedRsoUserId) ?? null
+        : null
+
+  const lcoName =
+    lcoNameRaw && lcoNameRaw.length > 0
+      ? lcoNameRaw
+      : sanitizedLcoUserId
+        ? validUserMap.get(sanitizedLcoUserId) ?? null
+        : null
+
   // Soft-gate safety evaluation
   let warnings: string[] = []
 
@@ -494,9 +564,16 @@ flightsRouter.post('/', async (c) => {
 
   // If warnings triggered and NOT acknowledged: return 422 Unprocessable Entity
   if (mergedWarnings.length > 0 && !isProceeded) {
-    const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents] =
+    const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
       await Promise.all([
-        db.select({ id: schema.rockets.id, name: schema.rockets.name }).from(schema.rockets),
+        db
+          .select({
+            id: schema.rockets.id,
+            name: schema.rockets.name,
+            lengthMm: schema.rockets.lengthMm,
+            bodyDiameterMm: schema.rockets.bodyDiameterMm,
+          })
+          .from(schema.rockets),
         db
           .select({
             id: schema.rocketConfigurations.id,
@@ -505,6 +582,8 @@ flightsRouter.post('/', async (c) => {
             stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
             dryMassG: schema.rocketConfigurations.dryMassG,
             loadedMassG: schema.rocketConfigurations.loadedMassG,
+            lengthMm: schema.rocketConfigurations.lengthMm,
+            bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
           })
           .from(schema.rocketConfigurations),
         db
@@ -514,6 +593,7 @@ flightsRouter.post('/', async (c) => {
             model: schema.motors.model,
             impulseClass: schema.motors.impulseClass,
             delayS: schema.motors.delayS,
+            diameterMm: schema.motors.diameterMm,
           })
           .from(schema.motors)
           .orderBy(schema.motors.manufacturer, schema.motors.model),
@@ -545,6 +625,14 @@ flightsRouter.post('/', async (c) => {
           })
           .from(schema.launchEvents)
           .orderBy(schema.launchEvents.name),
+        db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.isActive, true))
+          .orderBy(schema.users.displayName),
       ])
 
     const inventories = inventoryRows.map((inv) => ({
@@ -562,6 +650,7 @@ flightsRouter.post('/', async (c) => {
       inventories,
       launchSites,
       launchEvents,
+      users,
       flyerCertLevel,
       initialValues: body,
       warnings: mergedWarnings,
@@ -605,6 +694,10 @@ flightsRouter.post('/', async (c) => {
       ceilingM,
       outcome,
       notes,
+      rsoUserId: sanitizedRsoUserId,
+      lcoUserId: sanitizedLcoUserId,
+      rsoName: rsoName || null,
+      lcoName: lcoName || null,
       softGateWarnings: mergedWarnings,
       proceededDespiteWarnings: mergedWarnings.length > 0 && isProceeded,
     })
@@ -623,6 +716,396 @@ flightsRouter.post('/', async (c) => {
 
   return c.redirect(`/flights/${newFlight.id}`, 303)
 })
+
+/**
+ * GET /flights/:id/edit — Edit Flight Form View
+ */
+flightsRouter.get('/:id/edit', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const flightId = c.req.param('id')
+  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const [flight] = await db
+    .select()
+    .from(schema.flights)
+    .where(eq(schema.flights.id, flightId))
+
+  if (!flight) {
+    const errorHtml = pageLayout({
+      title: 'Flight Not Found',
+      activeTab: 'flights',
+      content: preflightWarningFragment(['The requested flight log does not exist or has been removed.']),
+      user: activeFlyer,
+    })
+    return c.html(errorHtml, 404, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
+    await Promise.all([
+      db
+        .select({
+          id: schema.rockets.id,
+          name: schema.rockets.name,
+          lengthMm: schema.rockets.lengthMm,
+          bodyDiameterMm: schema.rockets.bodyDiameterMm,
+        })
+        .from(schema.rockets),
+      db
+        .select({
+          id: schema.rocketConfigurations.id,
+          rocketId: schema.rocketConfigurations.rocketId,
+          version: schema.rocketConfigurations.version,
+          stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
+          dryMassG: schema.rocketConfigurations.dryMassG,
+          loadedMassG: schema.rocketConfigurations.loadedMassG,
+          lengthMm: schema.rocketConfigurations.lengthMm,
+          bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
+        })
+        .from(schema.rocketConfigurations),
+      db
+        .select({
+          id: schema.motors.id,
+          manufacturer: schema.motors.manufacturer,
+          model: schema.motors.model,
+          impulseClass: schema.motors.impulseClass,
+          delayS: schema.motors.delayS,
+          diameterMm: schema.motors.diameterMm,
+        })
+        .from(schema.motors)
+        .orderBy(schema.motors.manufacturer, schema.motors.model),
+      db
+        .select({
+          id: schema.motorInventories.id,
+          motorId: schema.motorInventories.motorId,
+          quantityOnHand: schema.motorInventories.quantityOnHand,
+          expendedCount: schema.motorInventories.expendedCount,
+          motorModel: schema.motors.model,
+          motorMfr: schema.motors.manufacturer,
+        })
+        .from(schema.motorInventories)
+        .leftJoin(schema.motors, eq(schema.motorInventories.motorId, schema.motors.id))
+        .where(eq(schema.motorInventories.userId, flight.flyerId)),
+      db
+        .select({
+          id: schema.launchSites.id,
+          name: schema.launchSites.name,
+          maxAltitudeAglM: schema.launchSites.maxAltitudeAglM,
+        })
+        .from(schema.launchSites)
+        .orderBy(schema.launchSites.name),
+      db
+        .select({
+          id: schema.launchEvents.id,
+          name: schema.launchEvents.name,
+          launchSiteId: schema.launchEvents.launchSiteId,
+        })
+        .from(schema.launchEvents)
+        .orderBy(schema.launchEvents.name),
+      db
+        .select({
+          id: schema.users.id,
+          displayName: schema.users.displayName,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.isActive, true))
+        .orderBy(schema.users.displayName),
+    ])
+
+  const inventories = inventoryRows.map((inv) => ({
+    id: inv.id,
+    motorId: inv.motorId,
+    quantityOnHand: inv.quantityOnHand,
+    expendedCount: inv.expendedCount,
+    motorModel: inv.motorMfr && inv.motorModel ? `${inv.motorMfr} ${inv.motorModel}` : inv.motorModel,
+  }))
+
+  const initialValues: Record<string, any> = {
+    flyer_id: flight.flyerId,
+    rocket_configuration_id: flight.rocketConfigurationId ?? '',
+    motor_id: flight.motorId ?? '',
+    motor_inventory_id: flight.motorInventoryId ?? '',
+    launch_site_id: flight.launchSiteId ?? '',
+    launch_event_id: flight.launchEventId ?? '',
+    flight_number: flight.flightNumber ?? '',
+    altitude_agl_m: flight.altitudeAglM ?? '',
+    expected_altitude_m: flight.altitudeAglM ?? '',
+    altitude_msl_m: flight.altitudeMslM ?? '',
+    max_velocity_mps: flight.maxVelocityMps ?? '',
+    max_accel_g: flight.maxAccelG ?? '',
+    wind_mps: flight.windMps ?? '',
+    wind_dir_deg: flight.windDirDeg ?? '',
+    temperature_c: flight.temperatureC ?? '',
+    visibility_m: flight.visibilityM ?? '',
+    ceiling_m: flight.ceilingM ?? '',
+    outcome: flight.outcome ?? 'successful',
+    notes: flight.notes ?? '',
+    rso_name: flight.rsoName ?? '',
+    lco_name: flight.lcoName ?? '',
+    rso_user_id: flight.rsoUserId ?? '',
+    lco_user_id: flight.lcoUserId ?? '',
+    soft_gate_warnings: flight.softGateWarnings ? JSON.stringify(flight.softGateWarnings) : '[]',
+    proceeded_despite_warnings: Boolean(flight.proceededDespiteWarnings),
+  }
+
+  const content = preflightFormView({
+    rockets,
+    configurations,
+    motors,
+    inventories,
+    launchSites,
+    launchEvents,
+    users,
+    flyerCertLevel: activeFlyer.maxCertLevel,
+    initialValues,
+    warnings: (flight.softGateWarnings as string[] | null) || [],
+    isEdit: true,
+    flightId: flight.id,
+  })
+
+  const fullHtml = pageLayout({
+    title: `Edit Flight #${flight.flightNumber || 1}`,
+    activeTab: 'flights',
+    content,
+    user: activeFlyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})
+
+/**
+ * Helper to handle updating an existing flight record.
+ */
+async function handleUpdateFlight(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flightId = c.req.param('id')
+  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const [existing] = await db
+    .select()
+    .from(schema.flights)
+    .where(eq(schema.flights.id, flightId))
+
+  if (!existing) {
+    if (c.req.header('accept')?.includes('application/json')) {
+      return c.json({ error: 'Flight not found' }, 404)
+    }
+    const errorHtml = pageLayout({
+      title: 'Flight Not Found',
+      activeTab: 'flights',
+      content: preflightWarningFragment(['The requested flight log does not exist or has been removed.']),
+      user: activeFlyer,
+    })
+    return c.html(errorHtml, 404, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const contentType = c.req.header('content-type') || ''
+  let body: Record<string, any> = {}
+  if (contentType.includes('application/json')) {
+    body = await c.req.json().catch(() => ({}))
+  } else {
+    body = await c.req.parseBody().catch(() => ({}))
+  }
+
+  const rocketConfigId =
+    body['rocket_configuration_id'] !== undefined
+      ? (body['rocket_configuration_id'] ? String(body['rocket_configuration_id']).trim() : null)
+      : existing.rocketConfigurationId
+
+  const motorId =
+    body['motor_id'] !== undefined
+      ? (body['motor_id'] ? String(body['motor_id']).trim() : null)
+      : existing.motorId
+
+  const motorInventoryId =
+    body['motor_inventory_id'] !== undefined
+      ? (body['motor_inventory_id'] ? String(body['motor_inventory_id']).trim() : null)
+      : existing.motorInventoryId
+
+  const launchSiteId =
+    body['launch_site_id'] !== undefined
+      ? (body['launch_site_id'] ? String(body['launch_site_id']).trim() : null)
+      : existing.launchSiteId
+
+  const launchEventId =
+    body['launch_event_id'] !== undefined
+      ? (body['launch_event_id'] ? String(body['launch_event_id']).trim() : null)
+      : existing.launchEventId
+
+  const flightNumber =
+    body['flight_number'] !== undefined
+      ? (body['flight_number'] !== '' && !isNaN(Number(body['flight_number'])) ? parseInt(String(body['flight_number']), 10) : null)
+      : existing.flightNumber
+
+  let flownAt = existing.flownAt
+  if (body['flown_at'] !== undefined) {
+    const pNum = Number(body['flown_at'])
+    if (!isNaN(pNum) && pNum > 0) {
+      flownAt = pNum
+    } else {
+      const pDate = new Date(String(body['flown_at'])).getTime()
+      if (!isNaN(pDate)) flownAt = pDate
+    }
+  }
+
+  const altitudeAglM =
+    body['altitude_agl_m'] !== undefined
+      ? (body['altitude_agl_m'] !== '' && !isNaN(Number(body['altitude_agl_m'])) ? Number(body['altitude_agl_m']) : null)
+      : existing.altitudeAglM
+
+  const altitudeMslM =
+    body['altitude_msl_m'] !== undefined
+      ? (body['altitude_msl_m'] !== '' && !isNaN(Number(body['altitude_msl_m'])) ? Number(body['altitude_msl_m']) : null)
+      : existing.altitudeMslM
+
+  const maxVelocityMps =
+    body['max_velocity_mps'] !== undefined
+      ? (body['max_velocity_mps'] !== '' && !isNaN(Number(body['max_velocity_mps'])) ? Number(body['max_velocity_mps']) : null)
+      : existing.maxVelocityMps
+
+  const maxAccelG =
+    body['max_accel_g'] !== undefined
+      ? (body['max_accel_g'] !== '' && !isNaN(Number(body['max_accel_g'])) ? Number(body['max_accel_g']) : null)
+      : existing.maxAccelG
+
+  const windMps =
+    body['wind_mps'] !== undefined
+      ? (body['wind_mps'] !== '' && !isNaN(Number(body['wind_mps'])) ? Number(body['wind_mps']) : null)
+      : existing.windMps
+
+  const windDirDeg =
+    body['wind_dir_deg'] !== undefined
+      ? (body['wind_dir_deg'] !== '' && !isNaN(Number(body['wind_dir_deg'])) ? Number(body['wind_dir_deg']) : null)
+      : existing.windDirDeg
+
+  const temperatureC =
+    body['temperature_c'] !== undefined
+      ? (body['temperature_c'] !== '' && !isNaN(Number(body['temperature_c'])) ? Number(body['temperature_c']) : null)
+      : existing.temperatureC
+
+  const visibilityM =
+    body['visibility_m'] !== undefined
+      ? (body['visibility_m'] !== '' && !isNaN(Number(body['visibility_m'])) ? Number(body['visibility_m']) : null)
+      : existing.visibilityM
+
+  const ceilingM =
+    body['ceiling_m'] !== undefined
+      ? (body['ceiling_m'] !== '' && !isNaN(Number(body['ceiling_m'])) ? Number(body['ceiling_m']) : null)
+      : existing.ceilingM
+
+  const outcome =
+    body['outcome'] !== undefined
+      ? (String(body['outcome']) as any)
+      : existing.outcome
+
+  const notes =
+    body['notes'] !== undefined
+      ? (body['notes'] ? String(body['notes']) : null)
+      : existing.notes
+
+  const rsoNameRaw =
+    body['rso_name'] !== undefined
+      ? (body['rso_name'] ? String(body['rso_name']).trim() : null)
+      : existing.rsoName
+
+  const lcoNameRaw =
+    body['lco_name'] !== undefined
+      ? (body['lco_name'] ? String(body['lco_name']).trim() : null)
+      : existing.lcoName
+
+  const rsoUserIdRaw =
+    body['rso_user_id'] !== undefined
+      ? (body['rso_user_id'] ? String(body['rso_user_id']).trim() : null)
+      : existing.rsoUserId
+
+  const lcoUserIdRaw =
+    body['lco_user_id'] !== undefined
+      ? (body['lco_user_id'] ? String(body['lco_user_id']).trim() : null)
+      : existing.lcoUserId
+
+  let sanitizedRsoUserId: string | null = null
+  let sanitizedLcoUserId: string | null = null
+
+  const candidateOfficerIds = [rsoUserIdRaw, lcoUserIdRaw].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  )
+
+  const validUserMap = new Map<string, string>()
+  if (candidateOfficerIds.length > 0) {
+    const matchingUsers = await db
+      .select({ id: schema.users.id, displayName: schema.users.displayName })
+      .from(schema.users)
+      .where(inArray(schema.users.id, candidateOfficerIds))
+
+    for (const u of matchingUsers) {
+      validUserMap.set(u.id, u.displayName)
+    }
+
+    if (rsoUserIdRaw && validUserMap.has(rsoUserIdRaw)) {
+      sanitizedRsoUserId = rsoUserIdRaw
+    }
+    if (lcoUserIdRaw && validUserMap.has(lcoUserIdRaw)) {
+      sanitizedLcoUserId = lcoUserIdRaw
+    }
+  }
+
+  const rsoName =
+    rsoNameRaw && rsoNameRaw.length > 0
+      ? rsoNameRaw
+      : sanitizedRsoUserId
+        ? validUserMap.get(sanitizedRsoUserId) ?? null
+        : null
+
+  const lcoName =
+    lcoNameRaw && lcoNameRaw.length > 0
+      ? lcoNameRaw
+      : sanitizedLcoUserId
+        ? validUserMap.get(sanitizedLcoUserId) ?? null
+        : null
+
+  const [updatedFlight] = await db
+    .update(schema.flights)
+    .set({
+      rocketConfigurationId: rocketConfigId,
+      motorId,
+      motorInventoryId,
+      launchSiteId,
+      launchEventId,
+      flightNumber,
+      flownAt,
+      altitudeAglM,
+      altitudeMslM,
+      maxVelocityMps,
+      maxAccelG,
+      windMps,
+      windDirDeg,
+      temperatureC,
+      visibilityM,
+      ceilingM,
+      outcome,
+      notes,
+      rsoName: rsoName || null,
+      lcoName: lcoName || null,
+      rsoUserId: sanitizedRsoUserId,
+      lcoUserId: sanitizedLcoUserId,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.flights.id, flightId))
+    .returning()
+
+  if (c.req.header('accept')?.includes('application/json')) {
+    return c.json(updatedFlight, 200)
+  }
+  return c.redirect(`/flights/${updatedFlight.id}`, 303)
+}
+
+flightsRouter.post('/:id/edit', handleUpdateFlight)
+flightsRouter.post('/:id', handleUpdateFlight)
 
 /**
  * GET /flights/:id — Flight Detail View
@@ -647,7 +1130,7 @@ flightsRouter.get('/:id', async (c) => {
     })
   }
 
-  const [flyer, config, motor, site, event] = await Promise.all([
+  const [flyer, config, motor, site, event, rsoUser, lcoUser] = await Promise.all([
     flight.flyerId
       ? db
           .select({
@@ -687,15 +1170,45 @@ flightsRouter.get('/:id', async (c) => {
           .where(eq(schema.launchEvents.id, flight.launchEventId))
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
+    flight.rsoUserId
+      ? db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.id, flight.rsoUserId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.lcoUserId
+      ? db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.id, flight.lcoUserId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
   ])
 
-  let rocket: { id: string; name: string; status: string | null } | null = null
+  let rocket: {
+    id: string
+    name: string
+    status: string | null
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
+  } | null = null
   if (config?.rocketId) {
     const [r] = await db
       .select({
         id: schema.rockets.id,
         name: schema.rockets.name,
         status: schema.rockets.status,
+        lengthMm: schema.rockets.lengthMm,
+        bodyDiameterMm: schema.rockets.bodyDiameterMm,
       })
       .from(schema.rockets)
       .where(eq(schema.rockets.id, config.rocketId))
@@ -718,6 +1231,8 @@ flightsRouter.get('/:id', async (c) => {
     site,
     event,
     flyer,
+    rsoUser,
+    lcoUser,
     units,
     unitSystem,
   })

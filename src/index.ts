@@ -23,6 +23,7 @@ import { sitesRouter } from './routes/sites'
 import { eventsRouter } from './routes/events'
 import { flightsRouter } from './routes/flights'
 import { settingsRouter } from './routes/settings'
+import { profileRouter } from './routes/profile'
 import { pageLayout } from './views/layout'
 
 type Bindings = {
@@ -77,6 +78,7 @@ app.route('/events', eventsRouter)
 app.route('/flights', flightsRouter)
 app.route('/settings', settingsRouter)
 app.route('/', settingsRouter)
+app.route('/profile', profileRouter)
 
 /**
  * Liveness probe. Does not touch the database.

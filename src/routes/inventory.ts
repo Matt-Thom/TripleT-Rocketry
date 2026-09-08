@@ -38,6 +38,13 @@ import {
   type InventoryItemForStorage,
 } from '../services/compliance'
 import { pageLayout } from '../views/layout'
+import { html } from 'hono/html'
+import {
+  storageSitesListView,
+  storageSiteFormView,
+  storageSiteDetailView,
+  type StorageSite,
+} from '../views/storage_sites'
 
 type Bindings = {
   DB: D1Database
@@ -444,6 +451,100 @@ export async function adjustInventoryHandler(c: any) {
   return c.html(fragment, 200, {
     'Content-Type': 'text/html; charset=utf-8',
   })
+}
+
+/**
+ * Dismiss / Archive Zero-Quantity Motor from Active Inventory (POST /inventory/:id/dismiss).
+ *
+ * Sets `deletedAt = Date.now()` on `schema.motorInventories` when `quantityOnHand === 0`.
+ * Preserves all historical records in `schema.inventoryTransactions` (chain-of-custody ledger).
+ *
+ * Rejects with HTTP 400 if `quantityOnHand > 0`.
+ * Rejects with HTTP 403/404 if unauthorized or not found.
+ * Supports HTML form (303 redirect), HTMX (200 empty fragment), and JSON API requests.
+ */
+export async function dismissInventoryHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const id = c.req.param('id')
+
+  if (!id) {
+    return c.json({ error: 'Missing inventory ID parameter' }, 400)
+  }
+
+  // Find active inventory item
+  const [inv] = await db
+    .select()
+    .from(schema.motorInventories)
+    .where(
+      and(
+        eq(schema.motorInventories.id, id),
+        isNull(schema.motorInventories.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  const isJson =
+    c.req.header('accept')?.includes('application/json') ||
+    c.req.header('content-type')?.includes('application/json')
+  const isHtmx = c.req.header('hx-request') === 'true'
+
+  if (!inv) {
+    // Check if item exists but is already dismissed (idempotent handling)
+    const [alreadyDismissed] = await db
+      .select()
+      .from(schema.motorInventories)
+      .where(eq(schema.motorInventories.id, id))
+      .limit(1)
+
+    if (alreadyDismissed) {
+      if (isJson) {
+        return c.json({ success: true, alreadyDismissed: true, id }, 200)
+      }
+      if (isHtmx) {
+        return c.html('', 200)
+      }
+      return c.redirect('/inventory', 303)
+    }
+
+    return c.json({ error: 'Motor inventory record not found' }, 404)
+  }
+
+  // Authorization check: flyer must own the inventory record
+  if (flyer && inv.userId !== flyer.id) {
+    return c.json({ error: 'Unauthorized: Motor inventory item belongs to another flyer' }, 403)
+  }
+
+  // Boundary check: motor must have quantityOnHand === 0
+  if (inv.quantityOnHand > 0) {
+    const errorMsg = 'Cannot dismiss motor inventory with quantity on hand greater than 0'
+    if (isJson) {
+      return c.json({ error: errorMsg }, 400)
+    }
+    return c.text(errorMsg, 400)
+  }
+
+  // Soft delete motor record by setting deletedAt timestamp
+  const now = Date.now()
+  await db
+    .update(schema.motorInventories)
+    .set({
+      deletedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(schema.motorInventories.id, id))
+
+  if (isJson) {
+    return c.json({ success: true, id, dismissedAt: now }, 200)
+  }
+
+  if (isHtmx) {
+    // Return empty HTML so HTMX outerHTML swap removes the row
+    return c.html('', 200)
+  }
+
+  // Standard HTML form submission: 303 redirect back to inventory hub
+  return c.redirect('/inventory', 303)
 }
 
 /**
@@ -1123,5 +1224,462 @@ inventoryRouter.post('/components/:id', updateComponentHandler)
 inventoryRouter.get('/transactions', custodyLedgerHandler)
 inventoryRouter.get('/transactions/new', newTransactionFormHandler)
 inventoryRouter.post('/transactions', createTransactionHandler)
+
+/**
+ * Helper to parse storage site input supporting both form-encoded and JSON payloads.
+ */
+export async function parseStorageSiteInput(c: any) {
+  const contentType = c.req.header('content-type') || ''
+  const isJson = contentType.includes('application/json')
+  let body: any = {}
+  if (isJson) {
+    body = await c.req.json().catch(() => ({}))
+  } else {
+    body = await c.req.parseBody().catch(() => ({}))
+  }
+
+  const name = String(body.name || '').trim()
+  const locationRaw = body.location !== undefined && body.location !== null ? String(body.location).trim() : null
+  const location = locationRaw && locationRaw.length > 0 ? locationRaw : null
+
+  const rawCapacity = body.capacity_kg !== undefined ? body.capacity_kg : body.capacityKg
+  let capacityKg = 0
+  if (rawCapacity !== undefined && rawCapacity !== null && rawCapacity !== '') {
+    const parsed = parseFloat(String(rawCapacity))
+    capacityKg = isNaN(parsed) ? 0 : parsed
+  }
+
+  const rawPermit = body.permit_number !== undefined ? body.permit_number : body.permitNumber
+  const permitTrimmed = rawPermit !== undefined && rawPermit !== null ? String(rawPermit).trim() : null
+  const permitNumber = permitTrimmed && permitTrimmed.length > 0 ? permitTrimmed : null
+
+  const notesRaw = body.notes !== undefined && body.notes !== null ? String(body.notes).trim() : null
+  const notes = notesRaw && notesRaw.length > 0 ? notesRaw : null
+
+  return { name, location, capacityKg, permitNumber, notes, isJson }
+}
+
+/**
+ * List Storage Sites (GET /inventory/storage-sites).
+ */
+export async function listStorageSitesHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+
+  const sites = await db
+    .select()
+    .from(schema.storageSites)
+    .where(
+      and(
+        eq(schema.storageSites.userId, flyer.id),
+        isNull(schema.storageSites.deletedAt),
+      ),
+    )
+    .orderBy(asc(schema.storageSites.name))
+
+  if (c.req.header('accept')?.includes('application/json')) {
+    return c.json(sites)
+  }
+
+  const content = storageSitesListView(sites, flyer)
+  const fullHtml = pageLayout({
+    title: 'Propellant Storage Sites & Physical Storage Magazines',
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * Storage Site Create Form (GET /inventory/storage-sites/new).
+ */
+export async function newStorageSiteFormHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+
+  const content = storageSiteFormView({
+    isNew: true,
+    user: flyer,
+  })
+  const fullHtml = pageLayout({
+    title: 'New Storage Site',
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * Create Storage Site (POST /inventory/storage-sites).
+ */
+export async function createStorageSiteHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+
+  const input = await parseStorageSiteInput(c)
+
+  if (!input.name) {
+    const errorMsg = 'Storage site name is required'
+    if (input.isJson) return c.json({ error: errorMsg }, 400)
+    const content = storageSiteFormView({
+      site: input,
+      error: errorMsg,
+      isNew: true,
+      user: flyer,
+    })
+    return c.html(
+      pageLayout({ title: 'New Storage Site', activeTab: 'inventory', content, user: flyer }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  // SafeWork SA Compliance Rule: capacityKg > 3.0 strictly requires regulatory permit
+  if (input.capacityKg > 3.0 && (!input.permitNumber || input.permitNumber.trim().length === 0)) {
+    const errorMsg = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg'
+    if (input.isJson) return c.json({ error: errorMsg }, 400)
+    const content = storageSiteFormView({
+      site: input,
+      error: errorMsg,
+      isNew: true,
+      user: flyer,
+    })
+    return c.html(
+      pageLayout({ title: 'New Storage Site', activeTab: 'inventory', content, user: flyer }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  const [site] = await db
+    .insert(schema.storageSites)
+    .values({
+      userId: flyer.id,
+      name: input.name,
+      location: input.location,
+      capacityKg: input.capacityKg,
+      permitNumber: input.permitNumber,
+      notes: input.notes,
+    })
+    .returning()
+
+  if (input.isJson) {
+    return c.json(site, 201)
+  }
+
+  return c.redirect('/inventory/storage-sites', 303)
+}
+
+/**
+ * View Storage Site Details (GET /inventory/storage-sites/:id).
+ */
+export async function viewStorageSiteHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+  const id = c.req.param('id')
+
+  const [site] = await db
+    .select()
+    .from(schema.storageSites)
+    .where(
+      and(
+        eq(schema.storageSites.id, id),
+        eq(schema.storageSites.userId, flyer.id),
+        isNull(schema.storageSites.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  if (!site) {
+    if (c.req.header('accept')?.includes('application/json')) {
+      return c.json({ error: 'Storage site not found' }, 404)
+    }
+    return c.html(
+      pageLayout({
+        title: 'Site Not Found',
+        activeTab: 'inventory',
+        user: flyer,
+        content: html`
+          <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-6 text-center">
+            <h2 class="text-xl font-bold text-slate-200">Storage Site Not Found</h2>
+            <p class="text-sm text-slate-400 mt-2">The requested storage site does not exist or has been removed.</p>
+            <a href="/inventory/storage-sites" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Storage Sites</a>
+          </div>
+        `,
+      }),
+      404,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  // Find motors and components located at this site
+  const siteMotors = await db
+    .select({
+      id: schema.motorInventories.id,
+      quantityOnHand: schema.motorInventories.quantityOnHand,
+      storageLocation: schema.motorInventories.storageLocation,
+      motor: {
+        manufacturer: schema.motors.manufacturer,
+        model: schema.motors.model,
+        impulseClass: schema.motors.impulseClass,
+        propellantWeightG: schema.motors.propellantWeightG,
+        weightG: schema.motors.weightG,
+      },
+    })
+    .from(schema.motorInventories)
+    .innerJoin(schema.motors, eq(schema.motorInventories.motorId, schema.motors.id))
+    .where(
+      and(
+        eq(schema.motorInventories.userId, flyer.id),
+        isNull(schema.motorInventories.deletedAt),
+      ),
+    )
+
+  const siteComponents = await db
+    .select()
+    .from(schema.components)
+    .where(
+      and(
+        eq(schema.components.userId, flyer.id),
+        isNull(schema.components.deletedAt),
+      ),
+    )
+
+  const matchingMotors = siteMotors.filter(
+    (m) =>
+      m.storageLocation &&
+      (m.storageLocation.toLowerCase() === site.name.toLowerCase() ||
+        (site.location && m.storageLocation.toLowerCase() === site.location.toLowerCase())),
+  )
+  const matchingComponents = siteComponents.filter(
+    (comp) =>
+      comp.storageLocation &&
+      (comp.storageLocation.toLowerCase() === site.name.toLowerCase() ||
+        (site.location && comp.storageLocation.toLowerCase() === site.location.toLowerCase())),
+  )
+
+  if (c.req.header('accept')?.includes('application/json')) {
+    return c.json({ site, motors: matchingMotors, components: matchingComponents })
+  }
+
+  const content = storageSiteDetailView(site, { motors: matchingMotors, components: matchingComponents }, flyer)
+  const fullHtml = pageLayout({
+    title: `Storage Site — ${site.name}`,
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * Storage Site Edit Form (GET /inventory/storage-sites/:id/edit).
+ */
+export async function editStorageSiteFormHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+  const id = c.req.param('id')
+
+  const [site] = await db
+    .select()
+    .from(schema.storageSites)
+    .where(
+      and(
+        eq(schema.storageSites.id, id),
+        eq(schema.storageSites.userId, flyer.id),
+        isNull(schema.storageSites.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  if (!site) {
+    return c.text('Storage site not found', 404)
+  }
+
+  const content = storageSiteFormView({
+    site,
+    isNew: false,
+    user: flyer,
+  })
+  const fullHtml = pageLayout({
+    title: `Edit Storage Site — ${site.name}`,
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * Update Storage Site (POST /inventory/storage-sites/:id/edit and POST /inventory/storage-sites/:id).
+ */
+export async function updateStorageSiteHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+  const id = c.req.param('id')
+
+  const [existing] = await db
+    .select()
+    .from(schema.storageSites)
+    .where(
+      and(
+        eq(schema.storageSites.id, id),
+        eq(schema.storageSites.userId, flyer.id),
+        isNull(schema.storageSites.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  if (!existing) {
+    return c.text('Storage site not found', 404)
+  }
+
+  const input = await parseStorageSiteInput(c)
+
+  if (!input.name) {
+    const errorMsg = 'Storage site name is required'
+    if (input.isJson) return c.json({ error: errorMsg }, 400)
+    const content = storageSiteFormView({
+      site: { ...existing, ...input, id },
+      error: errorMsg,
+      isNew: false,
+      user: flyer,
+    })
+    return c.html(
+      pageLayout({ title: `Edit Storage Site — ${existing.name}`, activeTab: 'inventory', content, user: flyer }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  // SafeWork SA Compliance Rule: capacityKg > 3.0 strictly requires regulatory permit
+  if (input.capacityKg > 3.0 && (!input.permitNumber || input.permitNumber.trim().length === 0)) {
+    const errorMsg = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg'
+    if (input.isJson) return c.json({ error: errorMsg }, 400)
+    const content = storageSiteFormView({
+      site: { ...existing, ...input, id },
+      error: errorMsg,
+      isNew: false,
+      user: flyer,
+    })
+    return c.html(
+      pageLayout({ title: `Edit Storage Site — ${existing.name}`, activeTab: 'inventory', content, user: flyer }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  const [updated] = await db
+    .update(schema.storageSites)
+    .set({
+      name: input.name,
+      location: input.location,
+      capacityKg: input.capacityKg,
+      permitNumber: input.permitNumber,
+      notes: input.notes,
+      updatedAt: Date.now(),
+    })
+    .where(and(eq(schema.storageSites.id, id), eq(schema.storageSites.userId, flyer.id)))
+    .returning()
+
+  if (input.isJson) {
+    return c.json(updated, 200)
+  }
+
+  return c.redirect('/inventory/storage-sites', 303)
+}
+
+/**
+ * Delete Storage Site (POST /inventory/storage-sites/:id/delete and DELETE /inventory/storage-sites/:id).
+ */
+export async function deleteStorageSiteHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  if (!flyer) return c.redirect('/login')
+  const id = c.req.param('id')
+
+  const [existing] = await db
+    .select()
+    .from(schema.storageSites)
+    .where(
+      and(
+        eq(schema.storageSites.id, id),
+        eq(schema.storageSites.userId, flyer.id),
+        isNull(schema.storageSites.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  if (!existing) {
+    return c.text('Storage site not found', 404)
+  }
+
+  // Soft delete
+  await db
+    .update(schema.storageSites)
+    .set({
+      deletedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    .where(and(eq(schema.storageSites.id, id), eq(schema.storageSites.userId, flyer.id)))
+
+  if (c.req.header('hx-request')) {
+    c.header('HX-Redirect', '/inventory/storage-sites')
+    return c.text('OK')
+  }
+
+  if (c.req.header('accept')?.includes('application/json')) {
+    return c.json({ success: true, id }, 200)
+  }
+
+  return c.redirect('/inventory/storage-sites', 303)
+}
+
+// Storage Sites CRUD Routes
+inventoryRouter.get('/storage-sites', listStorageSitesHandler)
+inventoryRouter.get('/inventory/storage-sites', listStorageSitesHandler)
+inventoryRouter.get('/storage-sites/new', newStorageSiteFormHandler)
+inventoryRouter.get('/inventory/storage-sites/new', newStorageSiteFormHandler)
+inventoryRouter.post('/storage-sites', createStorageSiteHandler)
+inventoryRouter.post('/inventory/storage-sites', createStorageSiteHandler)
+inventoryRouter.get('/storage-sites/:id', viewStorageSiteHandler)
+inventoryRouter.get('/inventory/storage-sites/:id', viewStorageSiteHandler)
+inventoryRouter.get('/storage-sites/:id/edit', editStorageSiteFormHandler)
+inventoryRouter.get('/inventory/storage-sites/:id/edit', editStorageSiteFormHandler)
+inventoryRouter.post('/storage-sites/:id/edit', updateStorageSiteHandler)
+inventoryRouter.post('/inventory/storage-sites/:id/edit', updateStorageSiteHandler)
+inventoryRouter.post('/storage-sites/:id', updateStorageSiteHandler)
+inventoryRouter.post('/inventory/storage-sites/:id', updateStorageSiteHandler)
+inventoryRouter.post('/storage-sites/:id/delete', deleteStorageSiteHandler)
+inventoryRouter.post('/inventory/storage-sites/:id/delete', deleteStorageSiteHandler)
+inventoryRouter.delete('/storage-sites/:id', deleteStorageSiteHandler)
+inventoryRouter.delete('/inventory/storage-sites/:id', deleteStorageSiteHandler)
+
+// Motor Dismissal Routes
+inventoryRouter.post('/:id/dismiss', dismissInventoryHandler)
+inventoryRouter.post('/inventory/:id/dismiss', dismissInventoryHandler)
+inventoryRouter.post('/motors/:id/dismiss', dismissInventoryHandler)
+inventoryRouter.delete('/:id', dismissInventoryHandler)
+inventoryRouter.delete('/inventory/:id', dismissInventoryHandler)
 
 export default inventoryRouter

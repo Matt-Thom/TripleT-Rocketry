@@ -115,6 +115,13 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
         </div>
         <div class="flex flex-wrap items-center gap-2.5">
           <a
+            href="/inventory/storage-sites"
+            class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-700 transition-colors shadow-sm gap-1.5"
+          >
+            <span>🏰</span>
+            <span>Storage Sites</span>
+          </a>
+          <a
             href="/inventory/transactions/new"
             class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors shadow-sm gap-1.5"
           >
@@ -354,6 +361,27 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                   <div class="font-mono text-slate-500">${item.batchLotNumber ? `Lot: ${item.batchLotNumber}` : ''}</div>
                                 </td>
                                 <td class="py-3.5 pl-3 pr-4 sm:pr-6 text-right whitespace-nowrap">
+                                  ${item.quantityOnHand <= 0
+                                    ? html`
+                                        <form
+                                          action="/inventory/${item.id}/dismiss"
+                                          method="POST"
+                                          class="inline-block mr-2.5"
+                                          hx-post="/inventory/${item.id}/dismiss"
+                                          hx-target="#inventory-row-${item.id}"
+                                          hx-swap="outerHTML"
+                                        >
+                                          <button
+                                            type="submit"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 transition-colors cursor-pointer"
+                                            title="Dismiss zero-quantity motor from active inventory view"
+                                          >
+                                            <span>🗑️</span>
+                                            <span>Dismiss</span>
+                                          </button>
+                                        </form>
+                                      `
+                                    : ''}
                                   <a
                                     href="/inventory/transactions/new?motor_inventory_id=${item.id}"
                                     class="text-xs font-semibold text-purple-400 hover:text-purple-300 hover:underline mr-3"

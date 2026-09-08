@@ -137,8 +137,14 @@ export function eventsListView(events: EventWithSite[], user?: any): HtmlEscaped
                           `
                         : ''}
 
-                      <!-- Officers Badges -->
+                      <!-- Officers & Leadership Badges -->
                       <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                        ${evt.launchDirector
+                          ? html`<span class="px-2 py-0.5 rounded bg-amber-950/70 text-amber-300 border border-amber-800/60 font-medium">Director: ${evt.launchDirector}</span>`
+                          : ''}
+                        ${evt.tripoliPrefect
+                          ? html`<span class="px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/60 font-medium">Prefect: ${evt.tripoliPrefect}</span>`
+                          : ''}
                         ${evt.rsoName
                           ? html`<span class="px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/60 font-medium">RSO: ${evt.rsoName}</span>`
                           : ''}
@@ -256,10 +262,18 @@ export function eventDetailView(
               : html`<div class="text-sm text-slate-400">Site details unlinked</div>`}
           </div>
 
-          <!-- Range Officers -->
+          <!-- Range Officers & Event Leadership -->
           <div class="bg-slate-900/70 p-3.5 rounded-lg border border-slate-800">
-            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Range Safety Officers</h3>
+            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Operational Leadership & Safety</h3>
             <div class="space-y-1.5 text-xs">
+              <div class="flex justify-between">
+                <span class="text-slate-400">Launch Director:</span>
+                <span class="text-slate-200 font-medium">${event.launchDirector || 'None designated'}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-400">Tripoli Prefect:</span>
+                <span class="text-slate-200 font-medium">${event.tripoliPrefect || 'None designated'}</span>
+              </div>
               <div class="flex justify-between">
                 <span class="text-slate-400">RSO:</span>
                 <span class="text-slate-200 font-medium">${rso || 'None designated'}</span>
@@ -539,6 +553,37 @@ export function newEventFormView(
                 placeholder="Optional User UUID"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
               />
+            </div>
+          </div>
+
+          <!-- Event Leadership (Launch Director & Tripoli Prefect) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label for="launch_director" class="block text-sm font-semibold text-slate-200 mb-1">
+                Launch Director
+              </label>
+              <input
+                type="text"
+                id="launch_director"
+                name="launch_director"
+                placeholder="Name of Launch Director"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+              />
+              <p class="text-xs text-slate-500 mt-1">Lead officer overseeing launch meet operations.</p>
+            </div>
+
+            <div>
+              <label for="tripoli_prefect" class="block text-sm font-semibold text-slate-200 mb-1">
+                Tripoli Prefect
+              </label>
+              <input
+                type="text"
+                id="tripoli_prefect"
+                name="tripoli_prefect"
+                placeholder="Name of Tripoli Prefect / TRA Sanctioning Officer"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+              />
+              <p class="text-xs text-slate-500 mt-1">Tripoli Rocketry Association sanctioning authority.</p>
             </div>
           </div>
 
