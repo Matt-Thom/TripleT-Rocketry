@@ -17,6 +17,9 @@ export interface FlightListItem {
   flightNumber?: number | null
   flownAt?: number | null
   logType?: string | null
+  isFirstFlight?: boolean | null
+  certAttempt?: string | null
+  padNumber?: string | null
   rocketName?: string | null
   configVersion?: number | null
   motorModel?: string | null
@@ -35,6 +38,18 @@ export interface FlightDetailOptions {
     id: string
     flyerId: string
     logType?: string | null
+    isFirstFlight?: boolean | null
+    certAttempt?: string | null
+    buildType?: string | null
+    stabilityCheckMethod?: string | null
+    stabilityMargin?: number | null
+    motorType?: string | null
+    totalWeightG?: number | null
+    recoverySystem?: string | null
+    recoverySize?: string | null
+    deploymentMethod?: string | null
+    mainDeployAltitude?: string | null
+    padNumber?: string | null
     rocketConfigurationId?: string | null
     motorId?: string | null
     motorInventoryId?: string | null
@@ -174,6 +189,8 @@ export interface PreflightFormProps {
     startsOn?: string | null
     endsOn?: string | null
     siteName?: string | null
+    rsoName?: string | null
+    lcoName?: string | null
   }>
   users?: Array<{
     id: string
@@ -188,30 +205,68 @@ export interface PreflightFormProps {
 }
 
 /**
- * Renders a color-coded status badge for a flight outcome.
+ * Renders a color-coded status badge for all Tripoli/SARC club flight outcomes
+ * and legacy system outcomes.
  */
 export function renderOutcomeBadge(outcome?: string | null): HtmlEscapedString | Promise<HtmlEscapedString> {
   if (!outcome) {
     return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-slate-700/50 text-slate-300 border border-slate-600/30">Unknown</span>`
   }
 
-  switch (outcome.toLowerCase()) {
+  const lower = outcome.toLowerCase()
+  switch (lower) {
+    case 'good':
     case 'successful':
-      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">✓ Successful</span>`
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">✓ ${outcome === 'good' ? 'GOOD' : (outcome === 'successful' ? 'Successful' : outcome)}</span>`
     case 'cato':
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">💥 CATO</span>`
-    case 'recovery_failure':
-      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ Recovery Failure</span>`
+    case 'shred':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">💥 Shred</span>`
+    case 'no chute':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">🪂 No chute</span>`
+    case 'lawn dart':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">🎯 Lawn Dart</span>`
+    case 'unstable':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ Unstable</span>`
+    case 'zipper':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ Zipper</span>`
     case 'separation':
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ Separation</span>`
+    case 'tangled':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">🪢 Tangled</span>`
+    case 'retention fail':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ Retention fail</span>`
+    case 'recovery_failure':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">⚠️ Recovery Failure</span>`
     case 'tree':
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">🌲 Tree Landing</span>`
     case 'powerline':
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">⚡ Powerline</span>`
+    case 'no ignition':
+      return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-600/30 text-slate-300 border border-slate-500/40">🚫 No ignition</span>`
     case 'lost':
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-600/30 text-slate-300 border border-slate-500/40">❓ Lost</span>`
     default:
       return html`<span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/30">${outcome}</span>`
+  }
+}
+
+/**
+ * Format build type to human-readable label.
+ */
+export function formatBuildType(buildType?: string | null): string {
+  if (!buildType) return '—'
+  switch (buildType.toLowerCase()) {
+    case 'rtf':
+      return 'Ready-to-Fly (RTF)'
+    case 'kit':
+      return 'Commercial Kit'
+    case 'modified':
+      return 'Modified Kit'
+    case 'scratch_built':
+      return 'Scratch Built'
+    default:
+      return buildType
   }
 }
 
@@ -418,11 +473,17 @@ export function flightsListView(
                           ${renderFlightLogTypeBadge(f.logType)}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                          <div class="font-semibold text-white">
-                            ${f.rocketName || 'Unnamed Rocket'}
+                          <div class="font-semibold text-white flex items-center gap-1.5 flex-wrap">
+                            <span>${f.rocketName || 'Unnamed Rocket'}</span>
+                            ${f.isFirstFlight
+                              ? html`<span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">✨ Maiden</span>`
+                              : ''}
+                            ${f.certAttempt && f.certAttempt !== 'none'
+                              ? html`<span class="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">🎓 ${f.certAttempt.toUpperCase()}</span>`
+                              : ''}
                           </div>
-                          ${f.configVersion != null
-                            ? html`<div class="text-xs text-slate-400">Config v${f.configVersion}</div>`
+                          ${f.configVersion != null || f.padNumber
+                            ? html`<div class="text-xs text-slate-400">${f.configVersion != null ? `Config v${f.configVersion}` : ''}${f.configVersion != null && f.padNumber ? ' • ' : ''}${f.padNumber ? (f.padNumber.toLowerCase().startsWith('pad') ? f.padNumber : `Pad ${f.padNumber}`) : ''}</div>`
                             : ''}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-slate-300">
@@ -513,6 +574,14 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
             ${flyer?.displayName ? html` by <strong class="text-slate-200">${flyer.displayName}</strong>` : ''}
             ${site?.name ? html` at <strong class="text-slate-200">${site.name}</strong>` : ''}
           </p>
+          <div class="flex flex-wrap items-center gap-2 mt-2">
+            ${flight.isFirstFlight
+              ? html`<span class="inline-flex items-center px-2.5 py-0.5 text-xs font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm">✨ Maiden Voyage</span>`
+              : ''}
+            ${flight.certAttempt && flight.certAttempt !== 'none'
+              ? html`<span class="inline-flex items-center px-2.5 py-0.5 text-xs font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm">🎓 ${flight.certAttempt.toUpperCase()} Cert Attempt</span>`
+              : ''}
+          </div>
         </div>
         <div class="flex items-center gap-3">
           <!-- Unit Toggle (Meters / Feet) -->
@@ -686,6 +755,12 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
                 #${flight.flightNumber || 1}
               </dd>
             </div>
+            <div>
+              <dt class="text-xs text-slate-400">Launch Pad</dt>
+              <dd class="mt-1 font-mono text-white font-semibold">
+                ${flight.padNumber || '—'}
+              </dd>
+            </div>
           </dl>
         </div>
 
@@ -728,16 +803,27 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               </dd>
             </div>
             <div>
-              <dt class="text-xs text-slate-400">Dry / Loaded Mass</dt>
+              <dt class="text-xs text-slate-400">Build Type</dt>
+              <dd class="mt-1 text-slate-200">
+                ${formatBuildType(flight.buildType)}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Total Loaded Mass</dt>
               <dd class="mt-1 font-mono text-slate-200">
-                ${config?.dryMassG != null ? `${config.dryMassG}g` : '—'} /
-                ${config?.loadedMassG != null ? `${config.loadedMassG}g` : '—'}
+                ${flight.totalWeightG != null ? `${flight.totalWeightG}g` : (config?.loadedMassG != null ? `${config.loadedMassG}g` : (config?.dryMassG != null ? `${config.dryMassG}g` : '—'))}
               </dd>
             </div>
             <div>
               <dt class="text-xs text-slate-400">Stability Margin</dt>
-              <dd class="mt-1 font-mono font-bold ${config?.stabilityCalibers && config.stabilityCalibers < 1.0 ? 'text-amber-400' : 'text-emerald-400'}">
-                ${config?.stabilityCalibers != null ? `${config.stabilityCalibers.toFixed(2)} cal` : '—'}
+              <dd class="mt-1 font-mono font-bold ${flight.stabilityMargin != null ? (flight.stabilityMargin < 1.0 ? 'text-amber-400' : 'text-emerald-400') : (config?.stabilityCalibers && config.stabilityCalibers < 1.0 ? 'text-amber-400' : 'text-emerald-400')}">
+                ${flight.stabilityMargin != null ? `${flight.stabilityMargin.toFixed(2)} cal` : (config?.stabilityCalibers != null ? `${config.stabilityCalibers.toFixed(2)} cal` : '—')}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Stability Verification</dt>
+              <dd class="mt-1 text-slate-200">
+                ${flight.stabilityCheckMethod || '—'}
               </dd>
             </div>
             <div data-cg="${config?.cgMm ?? ''}" data-cp="${config?.cpMm ?? ''}">
@@ -756,8 +842,8 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
             <div>
               <dt class="text-xs text-slate-400">Recovery System</dt>
               <dd class="mt-1 text-slate-200">
-                ${formatRecoveryType(config?.recoveryType)}
-                ${config?.recoveryType === 'dual_deploy'
+                ${flight.recoverySystem || formatRecoveryType(config?.recoveryType)}
+                ${flight.recoverySize ? ` (${flight.recoverySize})` : (config?.recoveryType === 'dual_deploy'
                   ? (isImperial
                       ? html` (Main: ${config?.parachuteSizeMm != null ? `${(config.parachuteSizeMm / 304.8).toFixed(1)} ft` : '—'}${config?.drogueParachuteSizeMm != null ? `, Drogue: ${(config.drogueParachuteSizeMm / 304.8).toFixed(1)} ft` : ''})`
                       : html` (Main: ${config?.parachuteSizeMm != null ? `${config.parachuteSizeMm}mm` : '—'}${config?.drogueParachuteSizeMm != null ? `, Drogue: ${config.drogueParachuteSizeMm}mm` : ''})`)
@@ -765,7 +851,19 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
                       ? (isImperial
                           ? ` (${(config.parachuteSizeMm / 304.8).toFixed(1)} ft)`
                           : ` (${config.parachuteSizeMm}mm)`)
-                      : '')}
+                      : ''))}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Deployment Method</dt>
+              <dd class="mt-1 text-slate-200">
+                ${flight.deploymentMethod || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Main Chute Deploy Alt</dt>
+              <dd class="mt-1 text-slate-200">
+                ${flight.mainDeployAltitude || '—'}
               </dd>
             </div>
           </dl>
@@ -812,6 +910,12 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dt class="text-xs text-slate-400">Propellant Type</dt>
               <dd class="mt-1 text-slate-200 uppercase font-mono text-xs">
                 ${motor?.propellantType || 'APCP'}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Motor Composition / Type</dt>
+              <dd class="mt-1 text-slate-200 uppercase font-mono text-xs">
+                ${flight.motorType || motor?.propellantType || '—'}
               </dd>
             </div>
             <div>
@@ -899,6 +1003,12 @@ export function flightDetailView(options: FlightDetailOptions): HtmlEscapedStrin
               <dd class="mt-1 font-semibold text-white flex items-center gap-2">
                 <span>⚡</span>
                 <span class="${lcoDisplay ? 'text-purple-300' : 'text-slate-400'}">${lcoDisplay || 'Unassigned / Self-Launch'}</span>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-slate-400">Launch Pad Designation</dt>
+              <dd class="mt-1 font-mono font-semibold text-white">
+                ${flight.padNumber ? (flight.padNumber.toLowerCase().startsWith('pad') ? flight.padNumber : `Pad ${flight.padNumber}`) : '—'}
               </dd>
             </div>
           </dl>
@@ -1219,6 +1329,276 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
               </div>
             </div>
           </div>
+
+          <!-- Section 1b: Airframe & Build Specifications -->
+          <div class="space-y-4 pt-4 border-t border-slate-700/60">
+            <h3 class="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <span>🛠️</span> Airframe & Build Specifications
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <!-- Maiden Voyage Toggle -->
+              <div class="sm:col-span-1 flex items-center">
+                <div class="flex items-center gap-3 p-3 bg-slate-900/80 border border-slate-700/80 rounded-lg w-full">
+                  <input
+                    type="checkbox"
+                    name="is_first_flight"
+                    id="is_first_flight"
+                    value="true"
+                    ${(initialValues['is_first_flight'] || initialValues['isFirstFlight']) ? 'checked' : ''}
+                    class="h-4 w-4 rounded border-slate-700 text-brand-500 focus:ring-brand-400 bg-slate-950 cursor-pointer"
+                  />
+                  <label for="is_first_flight" class="text-sm font-medium text-slate-200 cursor-pointer select-none">
+                    ✨ Maiden Voyage (First Flight)
+                  </label>
+                </div>
+              </div>
+
+              <!-- Certification Attempt -->
+              <div>
+                <label for="cert_attempt" class="block text-sm font-medium text-slate-200 mb-1">
+                  Certification Attempt
+                </label>
+                <select
+                  name="cert_attempt"
+                  id="cert_attempt"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                >
+                  <option value="none" ${(initialValues['cert_attempt'] ?? initialValues['certAttempt'] ?? 'none') === 'none' ? 'selected' : ''}>
+                    None (Standard Sport Flight)
+                  </option>
+                  <option value="mpr" ${(initialValues['cert_attempt'] ?? initialValues['certAttempt']) === 'mpr' ? 'selected' : ''}>
+                    Junior / Mid-Power (MPR)
+                  </option>
+                  <option value="l1" ${(initialValues['cert_attempt'] ?? initialValues['certAttempt']) === 'l1' ? 'selected' : ''}>
+                    Level 1 (H, I Impulse)
+                  </option>
+                  <option value="l2" ${(initialValues['cert_attempt'] ?? initialValues['certAttempt']) === 'l2' ? 'selected' : ''}>
+                    Level 2 (J, K, L Impulse)
+                  </option>
+                  <option value="l3" ${(initialValues['cert_attempt'] ?? initialValues['certAttempt']) === 'l3' ? 'selected' : ''}>
+                    Level 3 (M, N, O Impulse)
+                  </option>
+                </select>
+              </div>
+
+              <!-- Build Type -->
+              <div>
+                <label for="build_type" class="block text-sm font-medium text-slate-200 mb-1">
+                  Build Type
+                </label>
+                <select
+                  name="build_type"
+                  id="build_type"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                >
+                  <option value="">Select build type...</option>
+                  <option value="rtf" ${(initialValues['build_type'] ?? initialValues['buildType']) === 'rtf' ? 'selected' : ''}>
+                    RTF (Ready-to-Fly / Commercial)
+                  </option>
+                  <option value="kit" ${(initialValues['build_type'] ?? initialValues['buildType']) === 'kit' ? 'selected' : ''}>
+                    Commercial Kit
+                  </option>
+                  <option value="modified" ${(initialValues['build_type'] ?? initialValues['buildType']) === 'modified' ? 'selected' : ''}>
+                    Modified Kit
+                  </option>
+                  <option value="scratch_built" ${(initialValues['build_type'] ?? initialValues['buildType']) === 'scratch_built' ? 'selected' : ''}>
+                    Scratch Built / Custom
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 1c: Stability & Preflight -->
+          <div class="space-y-4 pt-4 border-t border-slate-700/60">
+            <h3 class="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <span>📐</span> Stability & Preflight Check
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Stability Check Method -->
+              <div>
+                <label for="stability_check_method" class="block text-sm font-medium text-slate-200 mb-1">
+                  Stability Verification Method
+                </label>
+                <input
+                  list="stability-methods"
+                  name="stability_check_method"
+                  id="stability_check_method"
+                  placeholder="e.g. OpenRocket, Rocksim, AltiCal, RasAero..."
+                  value="${initialValues['stability_check_method'] ?? initialValues['stabilityCheckMethod'] ?? ''}"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                />
+                <datalist id="stability-methods">
+                  <option value="OpenRocket" />
+                  <option value="Rocksim" />
+                  <option value="AltiCal" />
+                  <option value="RasAero" />
+                  <option value="Barrowman Equation" />
+                  <option value="Swing Test / Cutout" />
+                </datalist>
+                <p class="text-[11px] text-slate-400 mt-1">
+                  Simulation or calculation method used to verify aerodynamic stability.
+                </p>
+              </div>
+
+              <!-- Stability Margin -->
+              <div>
+                <label for="stability_margin" class="block text-sm font-medium text-slate-200 mb-1">
+                  Stability Margin (Calibers)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="stability_margin"
+                  id="stability_margin"
+                  placeholder="e.g. 1.80"
+                  value="${initialValues['stability_margin'] ?? initialValues['stabilityMargin'] ?? ''}"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                />
+                <p class="text-[11px] text-slate-400 mt-1">
+                  Calibers of stability recorded for this specific flight configuration.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 1d: Propulsion & Range Specification -->
+          <div class="space-y-4 pt-4 border-t border-slate-700/60">
+            <h3 class="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <span>⚡</span> Propulsion & Range Parameters
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <!-- Motor Type -->
+              <div>
+                <label for="motor_type" class="block text-sm font-medium text-slate-200 mb-1">
+                  Motor Type / Composition
+                </label>
+                <select
+                  name="motor_type"
+                  id="motor_type"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                >
+                  <option value="">Select motor composition...</option>
+                  <option value="Composite" ${(initialValues['motor_type'] ?? initialValues['motorType']) === 'Composite' ? 'selected' : ''}>Composite</option>
+                  <option value="Black Powder" ${(initialValues['motor_type'] ?? initialValues['motorType']) === 'Black Powder' ? 'selected' : ''}>Black Powder</option>
+                  <option value="Hybrid" ${(initialValues['motor_type'] ?? initialValues['motorType']) === 'Hybrid' ? 'selected' : ''}>Hybrid</option>
+                  <option value="Cluster" ${(initialValues['motor_type'] ?? initialValues['motorType']) === 'Cluster' ? 'selected' : ''}>Cluster</option>
+                  <option value="Staged" ${(initialValues['motor_type'] ?? initialValues['motorType']) === 'Staged' ? 'selected' : ''}>Staged</option>
+                  <option value="Sparky" ${(initialValues['motor_type'] ?? initialValues['motorType']) === 'Sparky' ? 'selected' : ''}>Sparky</option>
+                </select>
+              </div>
+
+              <!-- Total Weight (Loaded Mass) -->
+              <div>
+                <label for="total_weight_g" class="block text-sm font-medium text-slate-200 mb-1">
+                  Total Pad Weight (Loaded, g)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  name="total_weight_g"
+                  id="total_weight_g"
+                  placeholder="e.g. 1250"
+                  value="${initialValues['total_weight_g'] ?? initialValues['totalWeightG'] ?? ''}"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                />
+                <p class="text-[11px] text-slate-400 mt-1">Pre-launch all-up mass in grams.</p>
+              </div>
+
+              <!-- Pad Number -->
+              <div>
+                <label for="pad_number" class="block text-sm font-medium text-slate-200 mb-1">
+                  Launch Pad Designation
+                </label>
+                <input
+                  type="text"
+                  name="pad_number"
+                  id="pad_number"
+                  placeholder="e.g. A1, A2, B3, Own"
+                  value="${initialValues['pad_number'] ?? initialValues['padNumber'] ?? ''}"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                />
+                <p class="text-[11px] text-slate-400 mt-1">Designated launch pad or rack position.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 1e: Recovery Configuration -->
+          <div class="space-y-4 pt-4 border-t border-slate-700/60">
+            <h3 class="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <span>🪂</span> Recovery Configuration
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <!-- Recovery System -->
+              <div>
+                <label for="recovery_system" class="block text-sm font-medium text-slate-200 mb-1">
+                  Recovery System
+                </label>
+                <select
+                  name="recovery_system"
+                  id="recovery_system"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                >
+                  <option value="">Select recovery system...</option>
+                  <option value="Chute(s)" ${(initialValues['recovery_system'] ?? initialValues['recoverySystem']) === 'Chute(s)' ? 'selected' : ''}>Chute(s)</option>
+                  <option value="Streamer" ${(initialValues['recovery_system'] ?? initialValues['recoverySystem']) === 'Streamer' ? 'selected' : ''}>Streamer</option>
+                  <option value="Tumble" ${(initialValues['recovery_system'] ?? initialValues['recoverySystem']) === 'Tumble' ? 'selected' : ''}>Tumble</option>
+                  <option value="Other" ${(initialValues['recovery_system'] ?? initialValues['recoverySystem']) === 'Other' ? 'selected' : ''}>Other</option>
+                </select>
+              </div>
+
+              <!-- Recovery Device Size -->
+              <div>
+                <label for="recovery_size" class="block text-sm font-medium text-slate-200 mb-1">
+                  Recovery Device Size
+                </label>
+                <input
+                  type="text"
+                  name="recovery_size"
+                  id="recovery_size"
+                  placeholder='e.g. 24", 36", 50cm'
+                  value="${initialValues['recovery_size'] ?? initialValues['recoverySize'] ?? ''}"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                />
+              </div>
+
+              <!-- Deployment Method -->
+              <div>
+                <label for="deployment_method" class="block text-sm font-medium text-slate-200 mb-1">
+                  Deployment Method
+                </label>
+                <select
+                  name="deployment_method"
+                  id="deployment_method"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                >
+                  <option value="">Select deployment method...</option>
+                  <option value="Motor eject" ${(initialValues['deployment_method'] ?? initialValues['deploymentMethod']) === 'Motor eject' ? 'selected' : ''}>Motor eject</option>
+                  <option value="Chute Release" ${(initialValues['deployment_method'] ?? initialValues['deploymentMethod']) === 'Chute Release' ? 'selected' : ''}>Chute Release</option>
+                  <option value="Electronic deploy" ${(initialValues['deployment_method'] ?? initialValues['deploymentMethod']) === 'Electronic deploy' ? 'selected' : ''}>Electronic deploy</option>
+                </select>
+              </div>
+
+              <!-- Main Chute Deploy Altitude -->
+              <div>
+                <label for="main_deploy_altitude" class="block text-sm font-medium text-slate-200 mb-1">
+                  Main Chute Deploy Alt
+                </label>
+                <input
+                  type="text"
+                  name="main_deploy_altitude"
+                  id="main_deploy_altitude"
+                  placeholder="e.g. 500 ft, 150m, Apogee"
+                  value="${initialValues['main_deploy_altitude'] ?? initialValues['mainDeployAltitude'] ?? ''}"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Section 2: Launch Field & Event -->
@@ -1276,7 +1656,7 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                     : 'Date TBD'
                   const siteText = e.siteName || 'No site'
                   return html`
-                    <option value="${e.id}" ${selected}>
+                    <option value="${e.id}" ${selected} data-rso="${e.rsoName || ''}" data-lco="${e.lcoName || ''}" data-site="${e.launchSiteId || ''}">
                       ${e.name} (${dateText}) — ${siteText}
                     </option>
                   `
@@ -1379,17 +1759,45 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
                 required
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-medium"
               >
-                <option value="successful" ${initialValues['outcome'] === 'successful' || !initialValues['outcome'] ? 'selected' : ''}>
-                  ✓ Successful
+                <option value="GOOD" ${(initialValues['outcome'] === 'GOOD' || initialValues['outcome'] === 'successful' || !initialValues['outcome']) ? 'selected' : ''}>
+                  ✓ GOOD (Nominal Flight & Recovery)
                 </option>
-                <option value="cato" ${initialValues['outcome'] === 'cato' ? 'selected' : ''}>
-                  💥 CATO (Motor Failure)
+                <option value="CATO" ${initialValues['outcome'] === 'CATO' ? 'selected' : ''}>
+                  💥 CATO (Motor Catastrophic Failure)
                 </option>
-                <option value="separation" ${initialValues['outcome'] === 'separation' ? 'selected' : ''}>
-                  ⚠️ Early / High-Speed Separation
+                <option value="Shred" ${initialValues['outcome'] === 'Shred' ? 'selected' : ''}>
+                  💥 Shred (In-Flight Structural Failure)
+                </option>
+                <option value="Unstable" ${initialValues['outcome'] === 'Unstable' ? 'selected' : ''}>
+                  ⚠️ Unstable (Tumble / Erratic Flight)
+                </option>
+                <option value="Zipper" ${initialValues['outcome'] === 'Zipper' ? 'selected' : ''}>
+                  ⚠️ Zipper (Body Tube Tear)
+                </option>
+                <option value="Separation" ${initialValues['outcome'] === 'Separation' ? 'selected' : ''}>
+                  ⚠️ Separation (Premature Separation)
+                </option>
+                <option value="No chute" ${initialValues['outcome'] === 'No chute' ? 'selected' : ''}>
+                  🪂 No chute (Deployment Failure)
+                </option>
+                <option value="Tangled" ${initialValues['outcome'] === 'Tangled' ? 'selected' : ''}>
+                  🪢 Tangled (Fouled Lines / Shroud Knot)
+                </option>
+                <option value="Lawn Dart" ${initialValues['outcome'] === 'Lawn Dart' ? 'selected' : ''}>
+                  🎯 Lawn Dart (Ballistic Impact)
+                </option>
+                <option value="Retention fail" ${initialValues['outcome'] === 'Retention fail' ? 'selected' : ''}>
+                  ⚠️ Retention fail (Motor Retainer Released)
+                </option>
+                <option value="No ignition" ${initialValues['outcome'] === 'No ignition' ? 'selected' : ''}>
+                  🚫 No ignition (Pad Misfire)
+                </option>
+                <!-- Legacy compatibility values -->
+                <option value="successful" ${initialValues['outcome'] === 'successful' ? 'selected' : ''}>
+                  ✓ Successful (Legacy)
                 </option>
                 <option value="recovery_failure" ${initialValues['outcome'] === 'recovery_failure' ? 'selected' : ''}>
-                  ⚠️ Recovery Failure
+                  ⚠️ Recovery Failure (Legacy)
                 </option>
                 <option value="tree" ${initialValues['outcome'] === 'tree' ? 'selected' : ''}>
                   🌲 Tree Landing
@@ -1672,14 +2080,44 @@ export function preflightFormView(props: PreflightFormProps): HtmlEscapedString 
             });
           }
 
+          function initEventDutyOfficerAutofill() {
+            var eventSel = document.getElementById('launch_event_id');
+            var rsoInput = document.getElementById('rso_name');
+            var lcoInput = document.getElementById('lco_name');
+            var siteSel = document.getElementById('launch_site_id');
+            if (!eventSel) return;
+
+            eventSel.addEventListener('change', function() {
+              var opt = eventSel.options[eventSel.selectedIndex];
+              if (!opt || !opt.value) return;
+
+              var rso = opt.getAttribute('data-rso') || '';
+              var lco = opt.getAttribute('data-lco') || '';
+              var siteId = opt.getAttribute('data-site') || '';
+
+              if (rsoInput && rso) {
+                rsoInput.value = rso;
+              }
+              if (lcoInput && lco) {
+                lcoInput.value = lco;
+              }
+              if (siteSel && siteId && !siteSel.value) {
+                siteSel.value = siteId;
+                siteSel.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            });
+          }
+
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
               initMotorSearchFilter();
               initDualAltitudeSync();
+              initEventDutyOfficerAutofill();
             });
           } else {
             initMotorSearchFilter();
             initDualAltitudeSync();
+            initEventDutyOfficerAutofill();
           }
         })();
 

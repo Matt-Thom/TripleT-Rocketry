@@ -36,6 +36,7 @@ async function parseSiteInput(c: any) {
   let longitude: number | null = null
   let maxAltitudeAglM: number | null = null
   let notes: string | null = null
+  let returnTo: string | null = null
 
   if (contentType.includes('application/json')) {
     const json = await c.req.json().catch(() => ({}))
@@ -54,6 +55,12 @@ async function parseSiteInput(c: any) {
         ? Number(rawCeiling)
         : null
     notes = typeof json.notes === 'string' && json.notes.trim() ? json.notes.trim() : null
+    returnTo =
+      typeof json.return_to === 'string' && json.return_to.trim()
+        ? json.return_to.trim()
+        : typeof json.returnTo === 'string' && json.returnTo.trim()
+        ? json.returnTo.trim()
+        : null
   } else {
     const body = await c.req.parseBody()
     name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -71,9 +78,15 @@ async function parseSiteInput(c: any) {
         ? Number(rawCeiling)
         : null
     notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null
+    returnTo =
+      typeof body.return_to === 'string' && body.return_to.trim()
+        ? body.return_to.trim()
+        : typeof body.returnTo === 'string' && body.returnTo.trim()
+        ? body.returnTo.trim()
+        : null
   }
 
-  return { name, latitude, longitude, maxAltitudeAglM, notes, isJson: contentType.includes('application/json') }
+  return { name, latitude, longitude, maxAltitudeAglM, notes, returnTo, isJson: contentType.includes('application/json') }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +154,12 @@ async function handleCreateSite(c: any) {
 
   if (input.isJson) {
     return c.json(newSite, 201)
+  }
+
+  const returnTo = input.returnTo || c.req.query('return_to') || null
+  if (returnTo && typeof returnTo === 'string' && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+    const sep = returnTo.includes('?') ? '&' : '?'
+    return c.redirect(`${returnTo}${sep}launch_site_id=${newSite.id}`, 303)
   }
 
   return c.redirect(`/sites/${newSite.id}`, 303)

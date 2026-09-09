@@ -237,6 +237,8 @@ export async function seedTestFlight(
       logType: overrides.logType ?? 'actual',
       softGateWarnings: overrides.softGateWarnings ?? [],
       proceededDespiteWarnings: overrides.proceededDespiteWarnings ?? false,
+      isFirstFlight: overrides.isFirstFlight ?? false,
+      certAttempt: overrides.certAttempt ?? 'none',
       ...overrides,
     })
     .returning()

@@ -32,6 +32,7 @@ export interface RocketConfigSummary {
   finCount?: number | null
   lengthMm?: number | null
   bodyDiameterMm?: number | null
+  notes?: string | null
   isCurrent?: boolean
   createdAt?: number | null
 }
@@ -372,19 +373,28 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
         ${activeConfig
           ? html`
               <div class="mt-5">
-                <div class="flex items-center justify-between mb-3">
-                  <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                    <span>Active Configuration Spotlight</span>
-                    <span class="text-brand-400 font-extrabold bg-brand-950/80 px-2.5 py-0.5 rounded text-xs border border-brand-800/50">
-                      v${activeConfig.version} (Version ${activeConfig.version})
-                    </span>
-                  </h2>
-                  <span class="text-xs text-slate-400">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                  <div class="flex flex-wrap items-center gap-3">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                      <span>Active Configuration Spotlight</span>
+                      <span class="text-brand-400 font-extrabold bg-brand-950/80 px-2.5 py-0.5 rounded text-xs border border-brand-800/50">
+                        v${activeConfig.version} (Version ${activeConfig.version})
+                      </span>
+                    </h2>
+                    <a
+                      href="/rockets/${rocket.id}/configurations/${activeConfig.id}/edit"
+                      class="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:text-white shadow-sm transition-colors"
+                      title="Edit Active Configuration v${activeConfig.version}"
+                    >
+                      ✏️ Edit Active Configuration
+                    </a>
+                  </div>
+                  <span class="text-xs text-slate-400 hidden sm:inline">
                     Snapshot baseline for preflight validation & flight logging
                   </span>
                 </div>
 
-                <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-3">
                   <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
                     <div class="text-xs text-slate-400">Length</div>
                     <div class="mt-1 text-base font-bold text-white font-mono">
@@ -443,16 +453,37 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                     </div>
                     <div class="text-[10px] text-slate-500 mt-0.5">Distance from Nose Cone Tip</div>
                   </div>
+                  <!-- Decoupled Visual Metric Card 1: Motor Mount Diameter -->
                   <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
-                    <div class="text-xs text-slate-400">Motor Mount / Chute</div>
+                    <div class="text-xs text-slate-400">Motor Mount Diameter</div>
+                    <div class="mt-1 text-base font-bold text-white font-mono">
+                      ${activeConfig.motorMountDiameterMm != null ? `${activeConfig.motorMountDiameterMm}mm` : '—'}
+                    </div>
+                    <div class="text-[10px] text-slate-500 mt-0.5">Motor Casing Size</div>
+                  </div>
+                  <!-- Decoupled Visual Metric Card 2: Recovery / Chute Specifications -->
+                  <div class="bg-slate-900/90 border border-slate-800 rounded-lg p-3">
+                    <div class="text-xs text-slate-400">Recovery / Chute Specifications</div>
                     <div class="mt-1 text-sm font-semibold text-white">
-                      ${activeConfig.motorMountDiameterMm != null ? `${activeConfig.motorMountDiameterMm}mm` : '—'} /
+                      ${formatRecoveryType(activeConfig.recoveryType)}
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-0.5">
                       ${activeConfig.recoveryType === 'dual_deploy'
                         ? html`<span>Main: ${activeConfig.parachuteSizeMm != null ? `${activeConfig.parachuteSizeMm}mm` : '—'}${activeConfig.drogueParachuteSizeMm != null ? html`, Drogue: ${activeConfig.drogueParachuteSizeMm}mm` : ''}</span>`
                         : (activeConfig.parachuteSizeMm != null ? `${activeConfig.parachuteSizeMm}mm` : '—')}
                     </div>
                   </div>
                 </div>
+
+                <!-- Active Configuration Notes Callout (when present) -->
+                ${activeConfig.notes
+                  ? html`
+                      <div class="mt-3 bg-slate-900/60 border border-slate-800 rounded-lg p-3 text-xs text-slate-300">
+                        <span class="text-slate-400 font-semibold block mb-1">Configuration Notes:</span>
+                        <p class="whitespace-pre-wrap">${activeConfig.notes}</p>
+                      </div>
+                    `
+                  : ''}
               </div>
             `
           : ''}
@@ -519,6 +550,9 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
                               <strong class="text-brand-400 text-sm">v${cfg.version}</strong>
                               <span class="text-slate-400 text-xs font-normal">(Version ${cfg.version})</span>
                             </span>
+                            ${cfg.notes
+                              ? html`<div class="text-[10px] text-slate-400 truncate max-w-xs font-normal mt-0.5" title="${cfg.notes}">📝 ${cfg.notes}</div>`
+                              : ''}
                           </td>
 
                           <!-- Active Status Indicator -->
@@ -592,13 +626,22 @@ export function rocketDetailView(props: RocketDetailProps): HtmlEscapedString | 
 
                           <!-- Actions -->
                           <td class="px-4 py-3.5 whitespace-nowrap text-right">
-                            <a
-                              href="/rockets/${rocket.id}/configurations/new"
-                              class="text-xs text-brand-400 hover:text-brand-300 font-medium"
-                              title="Branch new snapshot from this airframe"
-                            >
-                              + New Snapshot
-                            </a>
+                            <div class="flex items-center justify-end gap-2">
+                              <a
+                                href="/rockets/${rocket.id}/configurations/${cfg.id}/edit"
+                                class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors"
+                                title="Edit Version ${cfg.version} snapshot"
+                              >
+                                ✏️ Edit
+                              </a>
+                              <a
+                                href="/rockets/${rocket.id}/configurations/new"
+                                class="text-xs text-brand-400 hover:text-brand-300 font-medium"
+                                title="Branch new snapshot from this airframe"
+                              >
+                                + New Snapshot
+                              </a>
+                            </div>
                           </td>
                         </tr>
                       `
@@ -1267,6 +1310,20 @@ export function newConfigFormView(
           </div>
         </div>
 
+        <!-- Configuration Notes -->
+        <div>
+          <label for="notes" class="block text-xs font-semibold text-slate-300 mb-1">
+            Configuration Notes
+          </label>
+          <textarea
+            id="notes"
+            name="notes"
+            rows="3"
+            placeholder="e.g. Trim weight added for high-altitude flight; upgraded parachute."
+            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+          ></textarea>
+        </div>
+
         <!-- Form Submission Actions -->
         <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
           <a
@@ -1426,3 +1483,412 @@ export function editRocketFormView(
     </div>
   `
 }
+
+/**
+ * 6. Edit Configuration Snapshot Form View: Pre-populated with target
+ * snapshot values allowing updates to all physical, aerodynamic, recovery,
+ * mass parameters, and notes for an existing version snapshot.
+ */
+export function editConfigFormView(
+  rocket: { id: string; name: string },
+  config: RocketConfigSummary,
+  activeConfigOrError?: RocketConfigSummary | string | null,
+  errorMessage?: string,
+): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const activeConfig = typeof activeConfigOrError === 'object' ? activeConfigOrError : null
+  const err = typeof activeConfigOrError === 'string' ? activeConfigOrError : errorMessage
+  const isEditingActive = config.isCurrent || (activeConfig && activeConfig.id === config.id)
+  const isDualDeploy = config.recoveryType === 'dual_deploy'
+
+  return html`
+    <div class="max-w-3xl mx-auto space-y-6">
+      <!-- Breadcrumbs -->
+      <nav class="flex items-center space-x-2 text-sm text-slate-400">
+        <a href="/rockets" class="hover:text-white transition-colors">Rockets</a>
+        <span>/</span>
+        <a href="/rockets/${rocket.id}" class="hover:text-white transition-colors truncate">${rocket.name}</a>
+        <span>/</span>
+        <span class="text-white font-medium">Edit Configuration Snapshot v${config.version}</span>
+      </nav>
+
+      <div>
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Edit Configuration Snapshot
+          </h1>
+          <span class="text-xs font-bold text-brand-400 bg-brand-950/80 px-2.5 py-1 rounded border border-brand-800/50">
+            Version ${config.version}
+          </span>
+          ${isEditingActive
+            ? html`
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  ✓ Active
+                </span>
+              `
+            : ''}
+        </div>
+        <p class="mt-1 text-sm text-slate-400">
+          Airframe: <strong class="text-white">${rocket.name}</strong>. Updating this snapshot maintains historical version integrity.
+          ${isEditingActive
+            ? html`<br><span class="text-amber-400/90 text-xs">Note: Updating dimensions on this active configuration will automatically sync with the parent rocket airframe.</span>`
+            : ''}
+        </p>
+      </div>
+
+      ${err
+        ? html`
+            <div class="p-4 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-sm">
+              <strong>Error:</strong> ${err}
+            </div>
+          `
+        : ''}
+
+      <form
+        action="/rockets/${rocket.id}/configurations/${config.id}/edit"
+        method="POST"
+        class="space-y-8 bg-slate-950 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-sm"
+      >
+        <!-- Section 1: Dimensions & Airframe Geometry -->
+        <div>
+          <h2 class="text-base font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+            <span>1. Dimensions & Airframe Geometry</span>
+          </h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Overall Length (mm) -->
+            <div>
+              <label for="length_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Overall Length (mm)
+              </label>
+              <input
+                type="number"
+                id="length_mm"
+                name="length_mm"
+                min="0"
+                step="any"
+                value="${config.lengthMm != null ? String(config.lengthMm) : ''}"
+                placeholder="e.g. 1600.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Total nose-to-nozzle length in millimeters</p>
+            </div>
+
+            <!-- Body Diameter (mm) -->
+            <div>
+              <label for="body_diameter_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Body Diameter (mm)
+              </label>
+              <input
+                type="number"
+                id="body_diameter_mm"
+                name="body_diameter_mm"
+                min="0"
+                step="any"
+                value="${config.bodyDiameterMm != null ? String(config.bodyDiameterMm) : ''}"
+                placeholder="e.g. 98.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Maximum outer tube diameter in millimeters</p>
+            </div>
+
+            <!-- Airframe Material -->
+            <div>
+              <label for="airframe_material" class="block text-xs font-semibold text-slate-300 mb-1">
+                Airframe Material
+              </label>
+              <input
+                type="text"
+                id="airframe_material"
+                name="airframe_material"
+                value="${config.airframeMaterial ?? ''}"
+                placeholder="e.g. Kraft phenolic, fiberglass, carbon"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+            </div>
+
+            <!-- Fin Count -->
+            <div>
+              <label for="fin_count" class="block text-xs font-semibold text-slate-300 mb-1">
+                Fin Count
+              </label>
+              <input
+                type="number"
+                id="fin_count"
+                name="fin_count"
+                min="0"
+                step="1"
+                value="${config.finCount != null ? String(config.finCount) : ''}"
+                placeholder="e.g. 3 or 4"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Mass Properties -->
+        <div>
+          <h2 class="text-base font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+            <span>2. Mass Properties</span>
+          </h2>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- Dry Mass -->
+            <div>
+              <label for="dry_mass_g" class="block text-xs font-semibold text-slate-300 mb-1">
+                Dry Mass (g)
+              </label>
+              <input
+                type="number"
+                id="dry_mass_g"
+                name="dry_mass_g"
+                min="0"
+                step="any"
+                value="${config.dryMassG != null ? String(config.dryMassG) : ''}"
+                placeholder="e.g. 480.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Mass without motor</p>
+            </div>
+
+            <!-- Loaded Mass -->
+            <div>
+              <label for="loaded_mass_g" class="block text-xs font-semibold text-slate-300 mb-1">
+                Loaded Mass (g)
+              </label>
+              <input
+                type="number"
+                id="loaded_mass_g"
+                name="loaded_mass_g"
+                min="0"
+                step="any"
+                value="${config.loadedMassG != null ? String(config.loadedMassG) : ''}"
+                placeholder="e.g. 620.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Total launch mass with motor</p>
+            </div>
+
+            <!-- Ballast Mass -->
+            <div>
+              <label for="ballast_g" class="block text-xs font-semibold text-slate-300 mb-1">
+                Nose / Ballast Mass (g)
+              </label>
+              <input
+                type="number"
+                id="ballast_g"
+                name="ballast_g"
+                min="0"
+                step="any"
+                value="${config.ballastG != null ? String(config.ballastG) : ''}"
+                placeholder="e.g. 0.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Trim weight in nose cone</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Aerodynamic Stability -->
+        <div>
+          <h2 class="text-base font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+            <span>3. Aerodynamic Stability</span>
+          </h2>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- Center of Gravity (CG) -->
+            <div>
+              <label for="cg_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Center of Gravity — CG (mm)
+              </label>
+              <input
+                type="number"
+                id="cg_mm"
+                name="cg_mm"
+                min="0"
+                step="any"
+                value="${config.cgMm != null ? String(config.cgMm) : ''}"
+                placeholder="e.g. 520.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">
+                Reference datum: Distance from Nose Cone Tip
+              </p>
+            </div>
+
+            <!-- Center of Pressure (CP) -->
+            <div>
+              <label for="cp_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Center of Pressure — CP (mm)
+              </label>
+              <input
+                type="number"
+                id="cp_mm"
+                name="cp_mm"
+                min="0"
+                step="any"
+                value="${config.cpMm != null ? String(config.cpMm) : ''}"
+                placeholder="e.g. 640.0"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">
+                Reference datum: Distance from Nose Cone Tip
+              </p>
+            </div>
+
+            <!-- Stability Calibers -->
+            <div>
+              <label for="stability_calibers" class="block text-xs font-semibold text-slate-300 mb-1">
+                Aerodynamic Stability (Calibers)
+              </label>
+              <input
+                type="number"
+                id="stability_calibers"
+                name="stability_calibers"
+                step="any"
+                value="${config.stabilityCalibers != null ? String(config.stabilityCalibers) : ''}"
+                placeholder="e.g. 1.75"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">
+                Calibers = (CP - CG) / Body Diam. Recommended ≥ 1.0.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 4: Propulsion & Recovery System -->
+        <div>
+          <h2 class="text-base font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+            <span>4. Propulsion & Recovery System</span>
+          </h2>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- Motor Mount Diameter -->
+            <div>
+              <label for="motor_mount_diameter_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Motor Mount Diameter (mm)
+              </label>
+              <input
+                type="number"
+                id="motor_mount_diameter_mm"
+                name="motor_mount_diameter_mm"
+                min="0"
+                step="any"
+                value="${config.motorMountDiameterMm != null ? String(config.motorMountDiameterMm) : ''}"
+                placeholder="e.g. 29, 38, 54"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Motor casing size in millimeters</p>
+            </div>
+
+            <!-- Recovery Type -->
+            <div>
+              <label for="edit_config_recovery_type" class="block text-xs font-semibold text-slate-300 mb-1">
+                Recovery Type
+              </label>
+              <select
+                id="edit_config_recovery_type"
+                name="recovery_type"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+                onchange="updateEditConfigRecovery()"
+              >
+                <option value="parachute" ${config.recoveryType === 'parachute' ? 'selected' : ''}>Parachute</option>
+                <option value="streamer" ${config.recoveryType === 'streamer' ? 'selected' : ''}>Streamer</option>
+                <option value="dual_deploy" ${config.recoveryType === 'dual_deploy' ? 'selected' : ''}>Dual Deploy</option>
+                <option value="tumble" ${config.recoveryType === 'tumble' ? 'selected' : ''}>Tumble</option>
+                <option value="other" ${config.recoveryType === 'other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+
+            <!-- Parachute Size -->
+            <div>
+              <label for="parachute_size_mm" id="edit_config_main_chute_label" class="block text-xs font-semibold text-slate-300 mb-1">
+                ${isDualDeploy ? 'Main Parachute Size (mm)' : 'Parachute Size (mm)'}
+              </label>
+              <input
+                type="number"
+                id="parachute_size_mm"
+                name="parachute_size_mm"
+                min="0"
+                step="any"
+                value="${config.parachuteSizeMm != null ? String(config.parachuteSizeMm) : ''}"
+                placeholder="e.g. 600"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+            </div>
+
+            <!-- Drogue Parachute Size (Dual Deploy) -->
+            <div id="edit_config_drogue_wrap" style="${isDualDeploy ? 'display: block;' : 'display: none;'}">
+              <label for="drogue_parachute_size_mm" class="block text-xs font-semibold text-slate-300 mb-1">
+                Drogue Parachute Size (mm)
+              </label>
+              <input
+                type="number"
+                id="drogue_parachute_size_mm"
+                name="drogue_parachute_size_mm"
+                min="0"
+                step="any"
+                value="${config.drogueParachuteSizeMm != null ? String(config.drogueParachuteSizeMm) : ''}"
+                placeholder="e.g. 300"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+              />
+              <p class="mt-1 text-[11px] text-slate-400">Drogue chute for apogee deployment</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 5: Configuration Notes -->
+        <div>
+          <h2 class="text-base font-bold text-white border-b border-slate-800 pb-2 mb-4 flex items-center gap-2">
+            <span>5. Configuration Notes</span>
+          </h2>
+          <div>
+            <label for="notes" class="block text-xs font-semibold text-slate-300 mb-1">
+              Configuration Notes
+            </label>
+            <textarea
+              id="notes"
+              name="notes"
+              rows="3"
+              placeholder="e.g. Trim weight added to nose cone for 54mm motor cert attempt. Main chute upgraded to 48-inch Ripstop."
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm"
+            >${config.notes ?? ''}</textarea>
+            <p class="mt-1 text-xs text-slate-400">
+              Document aerodynamic alterations, trim ballast adjustments, or airframe repairs specific to this configuration version.
+            </p>
+          </div>
+        </div>
+
+        <!-- Form Submission Actions -->
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+          <a
+            href="/rockets/${rocket.id}"
+            class="px-4 py-2 border border-slate-700 text-sm font-medium rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="px-5 py-2 border border-transparent text-sm font-semibold rounded-lg shadow-sm text-slate-950 bg-brand-400 hover:bg-brand-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 focus:ring-offset-slate-900 transition-colors"
+          >
+            Save Changes
+          </button>
+        </div>
+      </form>
+
+      <script>
+        function updateEditConfigRecovery() {
+          var sel = document.getElementById('edit_config_recovery_type');
+          var wrap = document.getElementById('edit_config_drogue_wrap');
+          var label = document.getElementById('edit_config_main_chute_label');
+          if (!sel || !wrap) return;
+          var isDual = sel.value === 'dual_deploy';
+          wrap.style.display = isDual ? 'block' : 'none';
+          if (label) {
+            label.textContent = isDual ? 'Main Parachute Size (mm)' : 'Parachute Size (mm)';
+          }
+        }
+        if (typeof window !== 'undefined') {
+          updateEditConfigRecovery();
+        }
+      </script>
+    </div>
+  `
+}
+

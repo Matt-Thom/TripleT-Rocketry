@@ -150,3 +150,82 @@ Integrity mode: development
 ### Verification & Quality
 - [ ] `npm run typecheck` exits with status 0 and zero TypeScript diagnostics.
 - [ ] `npm test` passes 100% of test suites with zero failures.
+
+## 2026-09-09T04:39:24Z
+
+Implement comprehensive logbook usability, range operations, rocket configuration snapshot editing, and flight card domain refinements for TripleT-Rocketry, fully aligning with club flight card data specifications and resolving event workflow edge cases.
+
+Working directory: /home/matt/Code/TripleT-Rocketry
+Integrity mode: development
+
+## Requirements
+
+### R1. Flight Card & Range Log Alignment (Google Sheet Schema Matching)
+- **Flight Card Schema & Form Fields**:
+  - Extend the flight data model (`flights` table in D1) and flight logging form (`/flights/new`, `/flights/:id/edit`) to incorporate all flight card categories from the Tripoli/SARC flight tracking specification:
+    - **First Flight**: Boolean flag indicating if this is the rocket airframe's maiden voyage (`is_first_flight`).
+    - **Certification Attempt**: Selectable level (`none`, `mpr`, `l1`, `l2`, `l3`).
+    - **Build Type**: Construction method (`rtf`, `kit`, `modified`, `scratch_built`).
+    - **Stability Check Method**: Method/tool used to verify stability for modified/scratch builds (`OpenRocket`, `Rocksim`, `AltiCal`, `RasAero`, or custom text).
+    - **Stability Margin**: Calibers of stability recorded for the flight.
+    - **Motor Type & Impulse Range**: Motor composition (`Black Powder`, `Composite`, `Hybrid`, `Cluster`, `Staged`, `Sparky`) and impulse power class.
+    - **Total Weight**: Pre-launch all-up mass in grams (`total_weight_g` / loaded weight).
+    - **Recovery Configuration**: Recovery system (`Chute(s)`, `Streamer`, `Tumble`, `Other`), size description (e.g. `24"`), deployment method (`Motor eject`, `Chute Release`, `Electronic deploy`), and main chute deployment altitude (e.g. altitude in feet/meters AGL or `Apogee`).
+    - **Pad Number**: Launch pad designation on the range (e.g., `A1`, `A2`, `B3`, `Own`).
+    - **Flight Outcomes**: Expanded club outcome options (`GOOD`, `CATO`, `Shred`, `Unstable`, `Zipper`, `Separation`, `No chute`, `Tangled`, `Lawn Dart`, `Retention fail`, `No ignition`).
+- **Automatic Event Duty Officer Autofill**:
+  - When an event is selected on `/flights/new` (or passed via query parameter `?launch_event_id=`), automatically pre-populate the flight's RSO and LCO text fields with the event's designated RSO and LCO.
+  - Keep both fields fully editable/overwritable on the flight log form to accommodate duty rotations during the day.
+- **Flight Detail & Logbook Display**:
+  - Render all flight card categories cleanly in flight detail cards, range summary views, and exportable tables.
+
+### R2. Rocket Configuration Snapshots & Active Config Editing
+- **Snapshot History Editing**:
+  - Implement full editing capabilities for historical configuration snapshots (`GET /rockets/:id/configurations/:configId/edit` and `POST /rockets/:id/configurations/:configId/edit`).
+  - Add explicit "✏️ Edit" action buttons for every configuration version in the snapshot history table on `/rockets/:id`.
+- **Active Configuration Editing**:
+  - Provide a direct "✏️ Edit Active Configuration" button and workflow on the rocket detail view, allowing flyers to update aerodynamic and physical properties of the active configuration.
+- **Full Field Coverage & Separation**:
+  - Ensure all active config parameters can be updated: dry mass, loaded mass, ballast, length, body diameter, Center of Gravity (CG), Center of Pressure (CP), stability calibers, recovery type, parachute size, drogue parachute size, motor mount diameter, and configuration notes.
+  - In the rocket configuration summary card, cleanly separate **Motor Mount Diameter** and **Recovery / Chute Specifications** into distinct visual metrics cards instead of combining them into a single tile.
+
+### R3. Launch Events: Plain Text Duty Officers & Non-Destructive Site Creation
+- **Plain Text Event Duty Officers**:
+  - Update `launch_events` to store plain text RSO and LCO names (`rso_name`, `lco_name`), matching the Launch Director and Tripoli Prefect pattern.
+  - Remove all "Optional User UUID" placeholders and UUID foreign key restrictions from event forms (`/events/new`, `/events/:id/edit`).
+  - Ensure entered names (e.g. "Andrew Buttery", "Jerome Pong") persist reliably and display prominently on the event dashboard, event detail view, and event list instead of showing "None designated".
+- **Non-Destructive Site Creation from Event Form**:
+  - When a user selects the option to add a new launch site while creating an event, provide an inline modal/dialog or preserve all entered event form state and redirect back to `/events/new` with the newly created site automatically selected, preventing data loss.
+
+### R4. Automated Testing & Verification
+- Comprehensive automated unit and integration tests covering:
+  - Database schema migration and D1 persistence for all new flight card fields and event text duty officers.
+  - Event officer text persistence without UUID restrictions and display across event cards and detail views.
+  - Flight form event selection auto-populating RSO/LCO and allowing manual overrides.
+  - Configuration snapshot editing (`GET/POST /rockets/:id/configurations/:configId/edit`) and active configuration updates.
+  - Distinct visual separation of motor mount diameter and recovery chutes.
+  - Non-destructive site creation flow returning to the event creation form.
+- All tests execute against the local Cloudflare D1 environment and pass 100% in Vitest.
+- TypeScript typecheck passes cleanly with zero errors (`npm run typecheck`).
+
+## Acceptance Criteria
+
+### Flight Card & Range Tracking
+- [ ] Flight creation form includes all flight card fields matching the Tripoli/SARC specification (first flight, cert attempt, build type, stability check method, motor type, total weight in grams, pad number, recovery size & deployment method, main chute deploy altitude, expanded outcomes).
+- [ ] Selecting an event automatically populates RSO and LCO fields while allowing manual edits.
+- [ ] Flight detail and table views display the new flight card specifications.
+
+### Rocket Configuration Editing
+- [ ] Configuration snapshots in the history table have a functional "✏️ Edit" button that opens an edit form.
+- [ ] Flyers can edit CG, CP, motor mount diameter, chute sizes, and all physical parameters on any configuration.
+- [ ] Active configuration card has a direct "✏️ Edit Active Config" action.
+- [ ] Motor Mount Diameter and Recovery / Chute are displayed in separate cards.
+
+### Launch Events
+- [ ] Event creation and editing forms accept text strings for RSO and LCO without "Optional User UUID" placeholders.
+- [ ] Saved RSO and LCO names display on the event dashboard and detail view (not "None designated").
+- [ ] Creating a new site from `/events/new` returns to the event form without losing previously entered event data.
+
+### Verification & Quality
+- [ ] `npm run typecheck` exits with status 0 and zero TypeScript errors.
+- [ ] `npm test` executes all test suites against local Cloudflare D1 and passes 100% of test cases.

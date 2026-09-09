@@ -51,6 +51,9 @@ flightsRouter.get('/', async (c) => {
       flightNumber: schema.flights.flightNumber,
       flownAt: schema.flights.flownAt,
       logType: schema.flights.logType,
+      isFirstFlight: schema.flights.isFirstFlight,
+      certAttempt: schema.flights.certAttempt,
+      padNumber: schema.flights.padNumber,
       altitudeAglM: schema.flights.altitudeAglM,
       maxVelocityMps: schema.flights.maxVelocityMps,
       outcome: schema.flights.outcome,
@@ -91,6 +94,9 @@ flightsRouter.get('/', async (c) => {
     flightNumber: f.flightNumber,
     flownAt: f.flownAt,
     logType: f.logType,
+    isFirstFlight: Boolean(f.isFirstFlight),
+    certAttempt: f.certAttempt || null,
+    padNumber: f.padNumber || null,
     altitudeAglM: f.altitudeAglM,
     maxVelocityMps: f.maxVelocityMps,
     outcome: f.outcome,
@@ -190,6 +196,8 @@ flightsRouter.get('/new', async (c) => {
           launchSiteId: schema.launchEvents.launchSiteId,
           startsOn: schema.launchEvents.startsOn,
           endsOn: schema.launchEvents.endsOn,
+          rsoName: schema.launchEvents.rsoName,
+          lcoName: schema.launchEvents.lcoName,
           siteName: schema.launchSites.name,
         })
         .from(schema.launchEvents)
@@ -213,6 +221,27 @@ flightsRouter.get('/new', async (c) => {
     motorModel: inv.motorMfr && inv.motorModel ? `${inv.motorMfr} ${inv.motorModel}` : inv.motorModel,
   }))
 
+  const queryLaunchEventId = c.req.query('launch_event_id') || ''
+  const queryLaunchSiteId = c.req.query('launch_site_id') || ''
+  const queryRocketConfigId = c.req.query('rocket_configuration_id') || ''
+  const queryMotorId = c.req.query('motor_id') || ''
+
+  // Pre-fill duty officers if launch_event_id was provided
+  const selectedEvent = queryLaunchEventId
+    ? launchEvents.find((e) => e.id === queryLaunchEventId)
+    : null
+
+  const initialValues: Record<string, any> = {
+    launch_event_id: queryLaunchEventId,
+    launch_site_id: queryLaunchSiteId || selectedEvent?.launchSiteId || '',
+    rocket_configuration_id: queryRocketConfigId,
+    motor_id: queryMotorId,
+    rso_name: selectedEvent?.rsoName || '',
+    lco_name: selectedEvent?.lcoName || '',
+    cert_attempt: 'none',
+    is_first_flight: false,
+  }
+
   const content = preflightFormView({
     rockets,
     configurations,
@@ -222,6 +251,7 @@ flightsRouter.get('/new', async (c) => {
     launchEvents,
     users,
     flyerCertLevel: activeFlyer.maxCertLevel,
+    initialValues,
   })
 
   const fullHtml = pageLayout({
@@ -503,6 +533,39 @@ flightsRouter.post('/', async (c) => {
         ? validUserMap.get(sanitizedLcoUserId) ?? null
         : null
 
+  // Flight Card Category Extractions
+  const isFirstFlight =
+    body['is_first_flight'] === 'true' ||
+    body['is_first_flight'] === '1' ||
+    body['is_first_flight'] === 'on' ||
+    (body['is_first_flight'] as any) === true
+
+  const certAttemptRaw = body['cert_attempt'] ? String(body['cert_attempt']).trim().toLowerCase() : 'none'
+  const certAttempt = ['none', 'mpr', 'l1', 'l2', 'l3'].includes(certAttemptRaw) ? (certAttemptRaw as any) : 'none'
+
+  const buildTypeRaw = body['build_type'] ? String(body['build_type']).trim() : null
+  const buildType = buildTypeRaw && buildTypeRaw.length > 0 ? (buildTypeRaw as any) : null
+
+  const stabilityCheckMethod = body['stability_check_method'] ? String(body['stability_check_method']).trim() : null
+
+  const stabilityMargin =
+    body['stability_margin'] !== undefined && body['stability_margin'] !== '' && !isNaN(Number(body['stability_margin']))
+      ? Number(body['stability_margin'])
+      : null
+
+  const motorType = body['motor_type'] ? String(body['motor_type']).trim() : null
+
+  const totalWeightG =
+    body['total_weight_g'] !== undefined && body['total_weight_g'] !== '' && !isNaN(Number(body['total_weight_g']))
+      ? Number(body['total_weight_g'])
+      : null
+
+  const recoverySystem = body['recovery_system'] ? (String(body['recovery_system']).trim() as any) : null
+  const recoverySize = body['recovery_size'] ? String(body['recovery_size']).trim() : null
+  const deploymentMethod = body['deployment_method'] ? (String(body['deployment_method']).trim() as any) : null
+  const mainDeployAltitude = body['main_deploy_altitude'] ? String(body['main_deploy_altitude']).trim() : null
+  const padNumber = body['pad_number'] ? String(body['pad_number']).trim() : null
+
   // Soft-gate safety evaluation
   let warnings: string[] = []
 
@@ -661,6 +724,8 @@ flightsRouter.post('/', async (c) => {
             launchSiteId: schema.launchEvents.launchSiteId,
             startsOn: schema.launchEvents.startsOn,
             endsOn: schema.launchEvents.endsOn,
+            rsoName: schema.launchEvents.rsoName,
+            lcoName: schema.launchEvents.lcoName,
             siteName: schema.launchSites.name,
           })
           .from(schema.launchEvents)
@@ -740,6 +805,18 @@ flightsRouter.post('/', async (c) => {
       lcoUserId: sanitizedLcoUserId,
       rsoName: rsoName || null,
       lcoName: lcoName || null,
+      isFirstFlight,
+      certAttempt,
+      buildType,
+      stabilityCheckMethod,
+      stabilityMargin,
+      motorType,
+      totalWeightG,
+      recoverySystem,
+      recoverySize,
+      deploymentMethod,
+      mainDeployAltitude,
+      padNumber,
       softGateWarnings: mergedWarnings,
       proceededDespiteWarnings: mergedWarnings.length > 0 && isProceeded,
     })
@@ -846,6 +923,8 @@ flightsRouter.get('/:id/edit', async (c) => {
           launchSiteId: schema.launchEvents.launchSiteId,
           startsOn: schema.launchEvents.startsOn,
           endsOn: schema.launchEvents.endsOn,
+          rsoName: schema.launchEvents.rsoName,
+          lcoName: schema.launchEvents.lcoName,
           siteName: schema.launchSites.name,
         })
         .from(schema.launchEvents)
@@ -895,6 +974,18 @@ flightsRouter.get('/:id/edit', async (c) => {
     lco_name: flight.lcoName ?? '',
     rso_user_id: flight.rsoUserId ?? '',
     lco_user_id: flight.lcoUserId ?? '',
+    is_first_flight: Boolean(flight.isFirstFlight),
+    cert_attempt: flight.certAttempt ?? 'none',
+    build_type: flight.buildType ?? '',
+    stability_check_method: flight.stabilityCheckMethod ?? '',
+    stability_margin: flight.stabilityMargin != null ? flight.stabilityMargin : '',
+    motor_type: flight.motorType ?? '',
+    total_weight_g: flight.totalWeightG != null ? flight.totalWeightG : '',
+    recovery_system: flight.recoverySystem ?? '',
+    recovery_size: flight.recoverySize ?? '',
+    deployment_method: flight.deploymentMethod ?? '',
+    main_deploy_altitude: flight.mainDeployAltitude ?? '',
+    pad_number: flight.padNumber ?? '',
     soft_gate_warnings: flight.softGateWarnings ? JSON.stringify(flight.softGateWarnings) : '[]',
     proceeded_despite_warnings: Boolean(flight.proceededDespiteWarnings),
   }
@@ -1150,6 +1241,66 @@ async function handleUpdateFlight(c: any) {
         ? validUserMap.get(sanitizedLcoUserId) ?? null
         : null
 
+  const isFirstFlight =
+    body['is_first_flight'] !== undefined
+      ? (body['is_first_flight'] === 'true' || body['is_first_flight'] === '1' || body['is_first_flight'] === 'on' || body['is_first_flight'] === true)
+      : existing.isFirstFlight
+
+  const certAttempt =
+    body['cert_attempt'] !== undefined
+      ? (body['cert_attempt'] ? (String(body['cert_attempt']).trim().toLowerCase() as any) : 'none')
+      : existing.certAttempt
+
+  const buildType =
+    body['build_type'] !== undefined
+      ? (body['build_type'] ? (String(body['build_type']).trim() as any) : null)
+      : existing.buildType
+
+  const stabilityCheckMethod =
+    body['stability_check_method'] !== undefined
+      ? (body['stability_check_method'] ? String(body['stability_check_method']).trim() : null)
+      : existing.stabilityCheckMethod
+
+  const stabilityMargin =
+    body['stability_margin'] !== undefined
+      ? (body['stability_margin'] !== '' && !isNaN(Number(body['stability_margin'])) ? Number(body['stability_margin']) : null)
+      : existing.stabilityMargin
+
+  const motorType =
+    body['motor_type'] !== undefined
+      ? (body['motor_type'] ? String(body['motor_type']).trim() : null)
+      : existing.motorType
+
+  const totalWeightG =
+    body['total_weight_g'] !== undefined
+      ? (body['total_weight_g'] !== '' && !isNaN(Number(body['total_weight_g'])) ? Number(body['total_weight_g']) : null)
+      : existing.totalWeightG
+
+  const recoverySystem =
+    body['recovery_system'] !== undefined
+      ? (body['recovery_system'] ? (String(body['recovery_system']).trim() as any) : null)
+      : existing.recoverySystem
+
+  const recoverySize =
+    body['recovery_size'] !== undefined
+      ? (body['recovery_size'] ? String(body['recovery_size']).trim() : null)
+      : existing.recoverySize
+
+  const deploymentMethod =
+    body['deployment_method'] !== undefined
+      ? (body['deployment_method'] ? (String(body['deployment_method']).trim() as any) : null)
+      : existing.deploymentMethod
+
+  const mainDeployAltitude =
+    body['main_deploy_altitude'] !== undefined
+      ? (body['main_deploy_altitude'] ? String(body['main_deploy_altitude']).trim() : null)
+      : existing.mainDeployAltitude
+
+  const padNumber =
+    body['pad_number'] !== undefined
+      ? (body['pad_number'] ? String(body['pad_number']).trim() : null)
+      : existing.padNumber
+
   const [updatedFlight] = await db
     .update(schema.flights)
     .set({
@@ -1176,6 +1327,18 @@ async function handleUpdateFlight(c: any) {
       lcoName: lcoName || null,
       rsoUserId: sanitizedRsoUserId,
       lcoUserId: sanitizedLcoUserId,
+      isFirstFlight,
+      certAttempt,
+      buildType,
+      stabilityCheckMethod,
+      stabilityMargin,
+      motorType,
+      totalWeightG,
+      recoverySystem,
+      recoverySize,
+      deploymentMethod,
+      mainDeployAltitude,
+      padNumber,
       updatedAt: Date.now(),
     })
     .where(eq(schema.flights.id, flightId))

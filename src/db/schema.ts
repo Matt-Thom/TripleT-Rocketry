@@ -45,13 +45,59 @@ export const ROCKET_STATUS = ['flight_ready', 'in_build', 'damaged', 'retired'] 
 export const RECOVERY_TYPE = [
   'parachute', 'streamer', 'dual_deploy', 'tumble', 'other',
 ] as const
+// Expanded Flight Outcomes (legacy + Tripoli/SARC club outcomes)
 export const FLIGHT_OUTCOME = [
-  'successful', 'cato', 'separation', 'recovery_failure',
-  'tree', 'powerline', 'lost', 'other',
+  'successful',
+  'cato',
+  'separation',
+  'recovery_failure',
+  'tree',
+  'powerline',
+  'lost',
+  'other',
+  'GOOD',
+  'CATO',
+  'Shred',
+  'Unstable',
+  'Zipper',
+  'Separation',
+  'No chute',
+  'Tangled',
+  'Lawn Dart',
+  'Retention fail',
+  'No ignition',
 ] as const
+export type FlightOutcome = (typeof FLIGHT_OUTCOME)[number]
 
 export const FLIGHT_LOG_TYPE = ['preflight', 'actual'] as const;
 export type FlightLogType = (typeof FLIGHT_LOG_TYPE)[number];
+
+// Flight Card Domain Enumerations (Tripoli/SARC Specification)
+export const CERT_ATTEMPT = ['none', 'mpr', 'l1', 'l2', 'l3'] as const
+export type CertAttempt = (typeof CERT_ATTEMPT)[number]
+
+export const BUILD_TYPE = ['rtf', 'kit', 'modified', 'scratch_built'] as const
+export type BuildType = (typeof BUILD_TYPE)[number]
+
+export const RECOVERY_SYSTEM = ['Chute(s)', 'Streamer', 'Tumble', 'Other'] as const
+export type RecoverySystem = (typeof RECOVERY_SYSTEM)[number]
+
+export const DEPLOYMENT_METHOD = [
+  'Motor eject',
+  'Chute Release',
+  'Electronic deploy',
+] as const
+export type DeploymentMethod = (typeof DEPLOYMENT_METHOD)[number]
+
+export const MOTOR_COMPOSITION_TYPE = [
+  'Black Powder',
+  'Composite',
+  'Hybrid',
+  'Cluster',
+  'Staged',
+  'Sparky',
+] as const
+export type MotorCompositionType = (typeof MOTOR_COMPOSITION_TYPE)[number]
 
 export const COMPONENT_CATEGORY = [
   'motor', 'casing', 'recovery', 'avionics',
@@ -210,6 +256,7 @@ export const rocketConfigurations = sqliteTable(
     motorMountDiameterMm: real('motor_mount_diameter_mm'),
     lengthMm: real('length_mm'),
     bodyDiameterMm: real('body_diameter_mm'),
+    notes: text('notes'),
     isCurrent: integer('is_current', { mode: 'boolean' }).notNull().default(true),
     ...auditColumns,
   },
@@ -356,6 +403,8 @@ export const launchEvents = sqliteTable(
     lcoUserId: text('lco_user_id').references(() => users.id),
     launchDirector: text('launch_director'),
     tripoliPrefect: text('tripoli_prefect'),
+    rsoName: text('rso_name'),
+    lcoName: text('lco_name'),
     weatherNotes: text('weather_notes'),
     padCount: integer('pad_count'),
     ...auditColumns,
@@ -402,6 +451,25 @@ export const flights = sqliteTable(
     lcoUserId: text('lco_user_id').references(() => users.id),
     rsoName: text('rso_name'),
     lcoName: text('lco_name'),
+
+    // --- Flight Card Specifications (Requirement R1) --------------------------
+    isFirstFlight: integer('is_first_flight', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    certAttempt: text('cert_attempt', { enum: CERT_ATTEMPT })
+      .notNull()
+      .default('none'),
+    buildType: text('build_type', { enum: BUILD_TYPE }),
+    stabilityCheckMethod: text('stability_check_method'),
+    stabilityMargin: real('stability_margin'),
+    motorType: text('motor_type'),
+    totalWeightG: real('total_weight_g'),
+    recoverySystem: text('recovery_system', { enum: RECOVERY_SYSTEM }),
+    recoverySize: text('recovery_size'),
+    deploymentMethod: text('deployment_method', { enum: DEPLOYMENT_METHOD }),
+    mainDeployAltitude: text('main_deploy_altitude'),
+    padNumber: text('pad_number'),
+
     ...auditColumns,
   },
   (t) => [

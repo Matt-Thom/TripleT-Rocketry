@@ -22,6 +22,7 @@ import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import { pageLayout } from '../views/layout'
 import {
+  editConfigFormView,
   editRocketFormView,
   newConfigFormView,
   newRocketFormView,
@@ -246,6 +247,7 @@ rocketsRouter.post('/', async (c) => {
   const motorMountDiameterMm = parseOptionalNumber(
     body.motor_mount_diameter_mm ?? body.motorMountDiameterMm,
   )
+  const notes = parseOptionalString(body.notes)
 
   const hasConfigData =
     finCount != null ||
@@ -261,7 +263,8 @@ rocketsRouter.post('/', async (c) => {
     motorMountDiameterMm != null ||
     airframeMaterial != null ||
     lengthMm != null ||
-    bodyDiameterMm != null
+    bodyDiameterMm != null ||
+    notes != null
 
   // Insert baseline version 1 configuration snapshot if configuration fields were provided
   if (hasConfigData) {
@@ -282,6 +285,7 @@ rocketsRouter.post('/', async (c) => {
       motorMountDiameterMm,
       lengthMm,
       bodyDiameterMm,
+      notes,
       isCurrent: true,
       createdBy: flyer.id,
     })
@@ -593,6 +597,7 @@ rocketsRouter.post('/:id/configurations', async (c) => {
   const motorMountDiameterMm = parseOptionalNumber(
     body.motor_mount_diameter_mm ?? body.motorMountDiameterMm,
   )
+  const notes = parseOptionalString(body.notes)
 
   // Insert new configuration snapshot with isCurrent = true
   await db.insert(schema.rocketConfigurations).values({
@@ -612,6 +617,7 @@ rocketsRouter.post('/:id/configurations', async (c) => {
     motorMountDiameterMm,
     lengthMm,
     bodyDiameterMm,
+    notes,
     isCurrent: true,
     createdBy: flyer.id,
   })
@@ -629,6 +635,62 @@ rocketsRouter.post('/:id/configurations', async (c) => {
   }
 
   return c.redirect(`/rockets/${id}`, 303)
+})
+
+/**
+ * GET /rockets/:id/configurations/:configId/edit
+ * Renders the form to edit an existing configuration snapshot (all 13 physical/aerodynamic parameters).
+ */
+rocketsRouter.get('/:id/configurations/:configId/edit', async (c) => {
+  const { id, configId } = c.req.param()
+  const db = drizzle(c.env.DB, { schema })
+
+  const [rocket] = await db
+    .select()
+    .from(schema.rockets)
+    .where(and(eq(schema.rockets.id, id), isNull(schema.rockets.deletedAt)))
+
+  if (!rocket) {
+    return c.text('Rocket not found', 404)
+  }
+
+  const [targetConfig] = await db
+    .select()
+    .from(schema.rocketConfigurations)
+    .where(
+      and(
+        eq(schema.rocketConfigurations.id, configId),
+        eq(schema.rocketConfigurations.rocketId, id),
+        isNull(schema.rocketConfigurations.deletedAt),
+      ),
+    )
+
+  if (!targetConfig) {
+    return c.text('Configuration snapshot not found', 404)
+  }
+
+  const [activeConfig] = await db
+    .select()
+    .from(schema.rocketConfigurations)
+    .where(
+      and(
+        eq(schema.rocketConfigurations.rocketId, id),
+        eq(schema.rocketConfigurations.isCurrent, true),
+        isNull(schema.rocketConfigurations.deletedAt),
+      ),
+    )
+
+  const content = editConfigFormView(rocket, targetConfig, activeConfig || targetConfig)
+
+  const fullHtml = pageLayout({
+    title: `Edit Configuration Snapshot v${targetConfig.version} — ${rocket.name}`,
+    activeTab: 'rockets',
+    content,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
 })
 
 /**
@@ -654,7 +716,14 @@ const handleUpdateConfiguration = async (c: any) => {
     return c.text('Configuration snapshot not found', 404)
   }
 
-  const body = await c.req.parseBody()
+  const contentType = c.req.header('content-type') || ''
+  const isJson = contentType.includes('application/json')
+  let body: any = {}
+  if (isJson) {
+    body = await c.req.json().catch(() => ({}))
+  } else {
+    body = await c.req.parseBody().catch(() => ({}))
+  }
 
   const lengthMm =
     body.length_mm !== undefined || body.lengthMm !== undefined
@@ -734,6 +803,11 @@ const handleUpdateConfiguration = async (c: any) => {
       ? parseOptionalNumber(body.motor_mount_diameter_mm ?? body.motorMountDiameterMm)
       : targetConfig.motorMountDiameterMm
 
+  const notes =
+    body.notes !== undefined
+      ? parseOptionalString(body.notes)
+      : targetConfig.notes
+
   await db
     .update(schema.rocketConfigurations)
     .set({
@@ -751,6 +825,7 @@ const handleUpdateConfiguration = async (c: any) => {
       parachuteSizeMm,
       drogueParachuteSizeMm,
       motorMountDiameterMm,
+      notes,
       updatedAt: Date.now(),
     })
     .where(eq(schema.rocketConfigurations.id, configId))
@@ -764,6 +839,10 @@ const handleUpdateConfiguration = async (c: any) => {
         updatedAt: Date.now(),
       })
       .where(eq(schema.rockets.id, id))
+  }
+
+  if (isJson) {
+    return c.json({ success: true, id: configId })
   }
 
   return c.redirect(`/rockets/${id}`, 303)

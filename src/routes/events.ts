@@ -36,6 +36,8 @@ async function parseEventInput(c: any) {
   let weatherNotes: string | null = null
   let rsoUserId: string | null = null
   let lcoUserId: string | null = null
+  let rsoName: string | null = null
+  let lcoName: string | null = null
   let launchDirector: string | null = null
   let tripoliPrefect: string | null = null
 
@@ -84,6 +86,18 @@ async function parseEventInput(c: any) {
         ? json.lco_user_id.trim()
         : json.lcoUserId && typeof json.lcoUserId === 'string' && json.lcoUserId.trim()
         ? json.lcoUserId.trim()
+        : null
+    rsoName =
+      json.rso_name && typeof json.rso_name === 'string' && json.rso_name.trim()
+        ? json.rso_name.trim()
+        : json.rsoName && typeof json.rsoName === 'string' && json.rsoName.trim()
+        ? json.rsoName.trim()
+        : null
+    lcoName =
+      json.lco_name && typeof json.lco_name === 'string' && json.lco_name.trim()
+        ? json.lco_name.trim()
+        : json.lcoName && typeof json.lcoName === 'string' && json.lcoName.trim()
+        ? json.lcoName.trim()
         : null
     launchDirector =
       json.launch_director && typeof json.launch_director === 'string' && json.launch_director.trim()
@@ -143,6 +157,18 @@ async function parseEventInput(c: any) {
         : body.lcoUserId && typeof body.lcoUserId === 'string' && body.lcoUserId.trim()
         ? body.lcoUserId.trim()
         : null
+    rsoName =
+      body.rso_name && typeof body.rso_name === 'string' && body.rso_name.trim()
+        ? body.rso_name.trim()
+        : body.rsoName && typeof body.rsoName === 'string' && body.rsoName.trim()
+        ? body.rsoName.trim()
+        : null
+    lcoName =
+      body.lco_name && typeof body.lco_name === 'string' && body.lco_name.trim()
+        ? body.lco_name.trim()
+        : body.lcoName && typeof body.lcoName === 'string' && body.lcoName.trim()
+        ? body.lcoName.trim()
+        : null
     launchDirector =
       body.launch_director && typeof body.launch_director === 'string' && body.launch_director.trim()
         ? body.launch_director.trim()
@@ -166,6 +192,8 @@ async function parseEventInput(c: any) {
     weatherNotes,
     rsoUserId,
     lcoUserId,
+    rsoName,
+    lcoName,
     launchDirector,
     tripoliPrefect,
     isJson: contentType.includes('application/json'),
@@ -211,8 +239,8 @@ async function handleListEvents(c: any) {
     ...r.event,
     site: r.site,
     siteName: r.site?.name ?? 'Launch Site',
-    rsoName: r.event.rsoUserId ? userMap.get(r.event.rsoUserId) ?? r.event.rsoUserId : null,
-    lcoName: r.event.lcoUserId ? userMap.get(r.event.lcoUserId) ?? r.event.lcoUserId : null,
+    rsoName: r.event.rsoName || (r.event.rsoUserId ? userMap.get(r.event.rsoUserId) ?? r.event.rsoUserId : null),
+    lcoName: r.event.lcoName || (r.event.lcoUserId ? userMap.get(r.event.lcoUserId) ?? r.event.lcoUserId : null),
   }))
 
   const user = c.get('user') || null
@@ -232,8 +260,34 @@ async function handleNewEventForm(c: any) {
     .from(schema.launchSites)
     .orderBy(asc(schema.launchSites.name))
 
-  const selectedSiteId = c.req.query('launch_site_id') || null
-  return c.html(newEventFormView(allSites, selectedSiteId, user))
+  const query = c.req.query()
+  const selectedSiteId = query.launch_site_id || query.launchSiteId || null
+  const initialValues: Record<string, any> = {
+    name: query.name ?? '',
+    starts_on: query.starts_on ?? query.startsOn ?? '',
+    startsOn: query.starts_on ?? query.startsOn ?? '',
+    ends_on: query.ends_on ?? query.endsOn ?? '',
+    endsOn: query.ends_on ?? query.endsOn ?? '',
+    pad_count: query.pad_count ?? query.padCount ?? '',
+    padCount: query.pad_count ?? query.padCount ?? '',
+    rso_name: query.rso_name ?? query.rsoName ?? '',
+    rsoName: query.rso_name ?? query.rsoName ?? '',
+    lco_name: query.lco_name ?? query.lcoName ?? '',
+    lcoName: query.lco_name ?? query.lcoName ?? '',
+    rso_user_id: query.rso_user_id ?? query.rsoUserId ?? '',
+    rsoUserId: query.rso_user_id ?? query.rsoUserId ?? '',
+    lco_user_id: query.lco_user_id ?? query.lcoUserId ?? '',
+    lcoUserId: query.lco_user_id ?? query.lcoUserId ?? '',
+    launch_director: query.launch_director ?? query.launchDirector ?? '',
+    launchDirector: query.launch_director ?? query.launchDirector ?? '',
+    tripoli_prefect: query.tripoli_prefect ?? query.tripoliPrefect ?? '',
+    tripoliPrefect: query.tripoli_prefect ?? query.tripoliPrefect ?? '',
+    weather_notes: query.weather_notes ?? query.weatherNotes ?? query.notes ?? '',
+    weatherNotes: query.weather_notes ?? query.weatherNotes ?? query.notes ?? '',
+    launch_site_id: selectedSiteId ?? '',
+    launchSiteId: selectedSiteId ?? '',
+  }
+  return c.html(newEventFormView(allSites, selectedSiteId, user, initialValues))
 }
 
 async function handleCreateEvent(c: any) {
@@ -304,19 +358,40 @@ async function handleCreateEvent(c: any) {
     (id): id is string => typeof id === 'string' && id.trim().length > 0,
   )
 
+  let userDisplayNameMap = new Map<string, string>()
   if (candidateOfficerIds.length > 0) {
     const matchingUsers = await db
-      .select({ id: schema.users.id })
+      .select({ id: schema.users.id, displayName: schema.users.displayName })
       .from(schema.users)
       .where(inArray(schema.users.id, candidateOfficerIds))
 
     const validUserIds = new Set(matchingUsers.map((u) => u.id))
+    userDisplayNameMap = new Map(matchingUsers.map((u) => [u.id, u.displayName]))
 
     if (input.rsoUserId && validUserIds.has(input.rsoUserId)) {
       sanitizedRsoUserId = input.rsoUserId
     }
     if (input.lcoUserId && validUserIds.has(input.lcoUserId)) {
       sanitizedLcoUserId = input.lcoUserId
+    }
+  }
+
+  let finalRsoName = input.rsoName || null
+  let finalLcoName = input.lcoName || null
+
+  if (!finalRsoName && input.rsoUserId) {
+    if (sanitizedRsoUserId) {
+      finalRsoName = userDisplayNameMap.get(sanitizedRsoUserId) ?? null
+    } else {
+      finalRsoName = input.rsoUserId
+    }
+  }
+
+  if (!finalLcoName && input.lcoUserId) {
+    if (sanitizedLcoUserId) {
+      finalLcoName = userDisplayNameMap.get(sanitizedLcoUserId) ?? null
+    } else {
+      finalLcoName = input.lcoUserId
     }
   }
 
@@ -332,6 +407,8 @@ async function handleCreateEvent(c: any) {
         weatherNotes: input.weatherNotes,
         rsoUserId: sanitizedRsoUserId,
         lcoUserId: sanitizedLcoUserId,
+        rsoName: finalRsoName,
+        lcoName: finalLcoName,
         launchDirector: input.launchDirector,
         tripoliPrefect: input.tripoliPrefect,
       })
@@ -409,17 +486,17 @@ async function handleEventDetail(c: any) {
     site = foundSite ?? null
   }
 
-  // 3. Retrieve officer user display names
-  let rsoName: string | null = null
-  let lcoName: string | null = null
-  if (event.rsoUserId) {
+  // 3. Retrieve officer user display names or fallback to stored plain text names
+  let rsoName: string | null = event.rsoName || null
+  let lcoName: string | null = event.lcoName || null
+  if (!rsoName && event.rsoUserId) {
     const [rsoUser] = await db
       .select()
       .from(schema.users)
       .where(eq(schema.users.id, event.rsoUserId))
     rsoName = rsoUser?.displayName ?? event.rsoUserId
   }
-  if (event.lcoUserId) {
+  if (!lcoName && event.lcoUserId) {
     const [lcoUser] = await db
       .select()
       .from(schema.users)
@@ -486,7 +563,28 @@ async function handleEditEventForm(c: any) {
     .from(schema.launchSites)
     .orderBy(asc(schema.launchSites.name))
 
-  return c.html(editEventFormView(event, allSites, user))
+  let rsoName = event.rsoName || null
+  let lcoName = event.lcoName || null
+  if (!rsoName && event.rsoUserId) {
+    const [rsoUser] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, event.rsoUserId))
+    rsoName = rsoUser?.displayName ?? event.rsoUserId
+  }
+  if (!lcoName && event.lcoUserId) {
+    const [lcoUser] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, event.lcoUserId))
+    lcoName = lcoUser?.displayName ?? event.lcoUserId
+  }
+  const eventWithResolvedOfficers = {
+    ...event,
+    rsoName,
+    lcoName,
+  }
+  return c.html(editEventFormView(eventWithResolvedOfficers, allSites, user))
 }
 
 async function handleUpdateEvent(c: any) {
@@ -586,19 +684,40 @@ async function handleUpdateEvent(c: any) {
     (oid): oid is string => typeof oid === 'string' && oid.trim().length > 0,
   )
 
+  let userDisplayNameMap = new Map<string, string>()
   if (candidateOfficerIds.length > 0) {
     const matchingUsers = await db
-      .select({ id: schema.users.id })
+      .select({ id: schema.users.id, displayName: schema.users.displayName })
       .from(schema.users)
       .where(inArray(schema.users.id, candidateOfficerIds))
 
     const validUserIds = new Set(matchingUsers.map((u) => u.id))
+    userDisplayNameMap = new Map(matchingUsers.map((u) => [u.id, u.displayName]))
 
     if (input.rsoUserId && validUserIds.has(input.rsoUserId)) {
       sanitizedRsoUserId = input.rsoUserId
     }
     if (input.lcoUserId && validUserIds.has(input.lcoUserId)) {
       sanitizedLcoUserId = input.lcoUserId
+    }
+  }
+
+  let finalRsoName = input.rsoName || null
+  let finalLcoName = input.lcoName || null
+
+  if (!finalRsoName && input.rsoUserId) {
+    if (sanitizedRsoUserId) {
+      finalRsoName = userDisplayNameMap.get(sanitizedRsoUserId) ?? null
+    } else {
+      finalRsoName = input.rsoUserId
+    }
+  }
+
+  if (!finalLcoName && input.lcoUserId) {
+    if (sanitizedLcoUserId) {
+      finalLcoName = userDisplayNameMap.get(sanitizedLcoUserId) ?? null
+    } else {
+      finalLcoName = input.lcoUserId
     }
   }
 
@@ -614,6 +733,8 @@ async function handleUpdateEvent(c: any) {
         weatherNotes: input.weatherNotes,
         rsoUserId: sanitizedRsoUserId,
         lcoUserId: sanitizedLcoUserId,
+        rsoName: finalRsoName,
+        lcoName: finalLcoName,
         launchDirector: input.launchDirector,
         tripoliPrefect: input.tripoliPrefect,
         updatedAt: Date.now(),

@@ -18,8 +18,6 @@ export type Flight = typeof flights.$inferSelect
 export interface EventWithSite extends LaunchEvent {
   site?: LaunchSite | null
   siteName?: string | null
-  rsoName?: string | null
-  lcoName?: string | null
 }
 
 /**
@@ -85,6 +83,9 @@ function getEventStatusBadge(startsOn?: string | null, endsOn?: string | null) {
  * Render individual event card with status badge, details, and actions.
  */
 function renderEventCard(evt: EventWithSite) {
+  const rso = (evt.rsoName && evt.rsoName.trim()) || (evt.rsoUserId && evt.rsoUserId.trim()) || null
+  const lco = (evt.lcoName && evt.lcoName.trim()) || (evt.lcoUserId && evt.lcoUserId.trim()) || null
+
   return html`
     <div class="bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all shadow-sm">
       <div>
@@ -124,11 +125,11 @@ function renderEventCard(evt: EventWithSite) {
           ${evt.tripoliPrefect
             ? html`<span class="px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-800/60 font-medium">Prefect: ${evt.tripoliPrefect}</span>`
             : ''}
-          ${evt.rsoName
-            ? html`<span class="px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/60 font-medium">RSO: ${evt.rsoName}</span>`
+          ${rso
+            ? html`<span class="px-2 py-0.5 rounded bg-blue-950/70 text-blue-300 border border-blue-800/60 font-medium">RSO: ${rso}</span>`
             : ''}
-          ${evt.lcoName
-            ? html`<span class="px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/60 font-medium">LCO: ${evt.lcoName}</span>`
+          ${lco
+            ? html`<span class="px-2 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/60 font-medium">LCO: ${lco}</span>`
             : ''}
         </div>
 
@@ -359,8 +360,8 @@ export function eventDetailView(
   flightsList: Flight[],
   user?: any,
 ): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const rso = event.rsoName ?? event.rsoUserId
-  const lco = event.lcoName ?? event.lcoUserId
+  const rso = (event.rsoName && event.rsoName.trim()) || (event.rsoUserId && event.rsoUserId.trim()) || null
+  const lco = (event.lcoName && event.lcoName.trim()) || (event.lcoUserId && event.lcoUserId.trim()) || null
 
   const content = html`
     <div class="space-y-6">
@@ -577,7 +578,10 @@ export function newEventFormView(
   sites: LaunchSite[],
   selectedSiteId?: string | null,
   user?: any,
+  initialValues: Record<string, any> = {},
 ): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const effectiveSiteId = selectedSiteId || initialValues.launchSiteId || initialValues.launch_site_id || ''
+
   const content = html`
     <div class="max-w-2xl mx-auto space-y-6">
       <!-- Breadcrumb -->
@@ -609,6 +613,7 @@ export function newEventFormView(
               id="name"
               name="name"
               required
+              value="${initialValues.name || ''}"
               placeholder="e.g. Woomera HPR National Gathering 2026 or Lake Tyrrell Launch"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
             />
@@ -619,33 +624,39 @@ export function newEventFormView(
             <label for="launch_site_id" class="block text-sm font-semibold text-slate-200 mb-1">
               Host Launch Site <span class="text-brand-400">*</span>
             </label>
-            ${sites.length === 0
-              ? html`
-                  <div class="bg-amber-950/40 border border-amber-700/60 rounded-lg p-3 text-xs text-amber-200">
-                    No launch sites exist yet. You must
-                    <a href="/sites/new" class="font-bold underline text-brand-400">register a launch site</a>
-                    before scheduling an event.
-                  </div>
+            <select
+              id="launch_site_id"
+              name="launch_site_id"
+              required
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
+            >
+              <option value="">-- Select Host Launch Site --</option>
+              ${sites.map(
+                (s) => html`
+                  <option value="${s.id}" ${effectiveSiteId === s.id ? 'selected' : ''}>
+                    ${s.name} ${s.maxAltitudeAglM ? `(Ceiling: ${s.maxAltitudeAglM}m AGL)` : ''}
+                  </option>
                 `
-              : html`
-                  <select
-                    id="launch_site_id"
-                    name="launch_site_id"
-                    required
-                    class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
-                  >
-                    <option value="">-- Select Host Launch Site --</option>
-                    ${sites.map(
-                      (s) => html`
-                        <option value="${s.id}" ${selectedSiteId === s.id ? 'selected' : ''}>
-                          ${s.name} ${s.maxAltitudeAglM ? `(Ceiling: ${s.maxAltitudeAglM}m AGL)` : ''}
-                        </option>
-                      `
-                    )}
-                  </select>
-                `}
-            <p class="text-xs text-slate-500 mt-1">
-              Need a different field? <a href="/sites/new" class="text-brand-400 hover:text-brand-300 underline">+ Add new launch site</a>
+              )}
+            </select>
+            <p class="text-xs text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+              <span>Need a different field?</span>
+              <button
+                type="button"
+                id="open-create-site-modal"
+                onclick="document.getElementById('new-site-modal').showModal()"
+                class="text-brand-400 hover:text-brand-300 underline text-xs font-semibold cursor-pointer inline-flex items-center gap-1"
+              >
+                + Add new launch site
+              </button>
+              <noscript>
+                <a
+                  href="/sites/new?return_to=/events/new"
+                  class="text-brand-400 hover:text-brand-300 underline text-xs font-semibold"
+                >
+                  + Add new launch site
+                </a>
+              </noscript>
             </p>
           </div>
 
@@ -659,6 +670,7 @@ export function newEventFormView(
                 type="date"
                 id="starts_on"
                 name="starts_on"
+                value="${initialValues.starts_on || initialValues.startsOn || ''}"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
             </div>
@@ -671,6 +683,7 @@ export function newEventFormView(
                 type="date"
                 id="ends_on"
                 name="ends_on"
+                value="${initialValues.ends_on || initialValues.endsOn || ''}"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
             </div>
@@ -687,6 +700,7 @@ export function newEventFormView(
               name="pad_count"
               min="1"
               max="100"
+              value="${initialValues.pad_count ?? initialValues.padCount ?? ''}"
               placeholder="e.g. 12"
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
             />
@@ -694,31 +708,37 @@ export function newEventFormView(
           </div>
 
           <!-- Safety Officers Grid -->
+          <input type="hidden" name="rso_user_id" value="${initialValues.rsoUserId || initialValues.rso_user_id || ''}" />
+          <input type="hidden" name="lco_user_id" value="${initialValues.lcoUserId || initialValues.lco_user_id || ''}" />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label for="rso_user_id" class="block text-sm font-semibold text-slate-200 mb-1">
-                Range Safety Officer (RSO User ID)
+              <label for="rso_name" class="block text-sm font-semibold text-slate-200 mb-1">
+                Range Safety Officer (RSO)
               </label>
               <input
                 type="text"
-                id="rso_user_id"
-                name="rso_user_id"
-                placeholder="Optional User UUID"
-                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+                id="rso_name"
+                name="rso_name"
+                value="${initialValues.rsoName || initialValues.rso_name || ''}"
+                placeholder="e.g. Andrew Buttery"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
+              <p class="text-xs text-slate-500 mt-1">Designated Range Safety Officer conducting safety inspections.</p>
             </div>
 
             <div>
-              <label for="lco_user_id" class="block text-sm font-semibold text-slate-200 mb-1">
-                Launch Control Officer (LCO User ID)
+              <label for="lco_name" class="block text-sm font-semibold text-slate-200 mb-1">
+                Launch Control Officer (LCO)
               </label>
               <input
                 type="text"
-                id="lco_user_id"
-                name="lco_user_id"
-                placeholder="Optional User UUID"
-                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+                id="lco_name"
+                name="lco_name"
+                value="${initialValues.lcoName || initialValues.lco_name || ''}"
+                placeholder="e.g. Jerome Pong"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
+              <p class="text-xs text-slate-500 mt-1">Designated Launch Control Officer overseeing the firing system.</p>
             </div>
           </div>
 
@@ -732,6 +752,7 @@ export function newEventFormView(
                 type="text"
                 id="launch_director"
                 name="launch_director"
+                value="${initialValues.launchDirector || initialValues.launch_director || ''}"
                 placeholder="Name of Launch Director"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
@@ -746,6 +767,7 @@ export function newEventFormView(
                 type="text"
                 id="tripoli_prefect"
                 name="tripoli_prefect"
+                value="${initialValues.tripoliPrefect || initialValues.tripoli_prefect || ''}"
                 placeholder="Name of Tripoli Prefect / TRA Sanctioning Officer"
                 class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
@@ -764,7 +786,7 @@ export function newEventFormView(
               rows="3"
               placeholder="Forecasted wind velocity, cloud ceiling, temperature, ground conditions..."
               class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
-            ></textarea>
+            >${initialValues.weatherNotes || initialValues.weather_notes || ''}</textarea>
           </div>
 
           <!-- Actions -->
@@ -784,6 +806,230 @@ export function newEventFormView(
           </div>
         </form>
       </div>
+
+      <!-- Non-Destructive Inline Launch Site Creation Modal -->
+      <dialog
+        id="new-site-modal"
+        class="bg-slate-900 border border-slate-700 text-slate-200 rounded-xl p-6 shadow-2xl backdrop:bg-slate-950/80 max-w-lg w-full m-auto"
+      >
+        <div class="space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+              <span>📍</span> Add New Launch Site
+            </h3>
+            <button
+              type="button"
+              onclick="document.getElementById('new-site-modal').close()"
+              class="text-slate-400 hover:text-slate-200 text-xl leading-none p-1 cursor-pointer"
+              aria-label="Close modal"
+            >
+              &times;
+            </button>
+          </div>
+
+          <div id="modal-site-error" class="hidden bg-rose-950/70 border border-rose-800 text-rose-300 px-3 py-2 rounded text-xs"></div>
+
+          <form id="inline-create-site-form" onsubmit="return false;" class="space-y-4">
+            <!-- Site Name -->
+            <div>
+              <label for="modal_site_name" class="block text-xs font-semibold text-slate-200 mb-1">
+                Site / Field Name <span class="text-brand-400">*</span>
+              </label>
+              <input
+                type="text"
+                id="modal_site_name"
+                name="name"
+                required
+                placeholder="e.g. Lake Hart, Blanchetown, or Serpentine"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+              />
+            </div>
+
+            <!-- Coordinates Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="modal_site_lat" class="block text-xs font-semibold text-slate-200 mb-1">
+                  Latitude (decimal degrees)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  id="modal_site_lat"
+                  name="latitude"
+                  placeholder="e.g. -31.1540"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                />
+              </div>
+              <div>
+                <label for="modal_site_lng" class="block text-xs font-semibold text-slate-200 mb-1">
+                  Longitude (decimal degrees)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  id="modal_site_lng"
+                  name="longitude"
+                  placeholder="e.g. 136.5280"
+                  class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+                />
+              </div>
+            </div>
+
+            <!-- Airspace Ceiling -->
+            <div>
+              <label for="modal_site_max_alt" class="block text-xs font-semibold text-slate-200 mb-1">
+                CASA Airspace Ceiling (Meters AGL)
+              </label>
+              <input
+                type="number"
+                step="any"
+                id="modal_site_max_alt"
+                name="max_altitude_agl_m"
+                placeholder="e.g. 15000"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm font-mono"
+              />
+            </div>
+
+            <!-- Notes -->
+            <div>
+              <label for="modal_site_notes" class="block text-xs font-semibold text-slate-200 mb-1">
+                Notes & Field Guidelines
+              </label>
+              <textarea
+                id="modal_site_notes"
+                name="notes"
+                rows="2"
+                placeholder="Access conditions, gate codes, pasture rules..."
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 text-sm"
+              ></textarea>
+            </div>
+
+            <!-- Modal Actions -->
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onclick="document.getElementById('new-site-modal').close()"
+                class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="modal-submit-site-btn"
+                class="px-4 py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-semibold rounded-lg transition-colors shadow-sm cursor-pointer"
+              >
+                Create Site
+              </button>
+            </div>
+          </form>
+        </div>
+      </dialog>
+
+      <script>
+        (function() {
+          const modal = document.getElementById('new-site-modal');
+          const submitBtn = document.getElementById('modal-submit-site-btn');
+          const errorBox = document.getElementById('modal-site-error');
+
+          if (!submitBtn || !modal) return;
+
+          submitBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (errorBox) {
+              errorBox.classList.add('hidden');
+              errorBox.textContent = '';
+            }
+
+            const nameInput = document.getElementById('modal_site_name');
+            const name = nameInput ? nameInput.value.trim() : '';
+            if (!name) {
+              if (errorBox) {
+                errorBox.textContent = 'Launch site name is required.';
+                errorBox.classList.remove('hidden');
+              } else {
+                alert('Launch site name is required.');
+              }
+              return;
+            }
+
+            const latVal = document.getElementById('modal_site_lat')?.value.trim();
+            const lngVal = document.getElementById('modal_site_lng')?.value.trim();
+            const ceilingVal = document.getElementById('modal_site_max_alt')?.value.trim();
+            const notesVal = document.getElementById('modal_site_notes')?.value.trim();
+
+            const payload = {
+              name: name,
+              latitude: latVal && !isNaN(Number(latVal)) ? Number(latVal) : null,
+              longitude: lngVal && !isNaN(Number(lngVal)) ? Number(lngVal) : null,
+              max_altitude_agl_m: ceilingVal && !isNaN(Number(ceilingVal)) ? Number(ceilingVal) : null,
+              notes: notesVal || null,
+            };
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating...';
+
+            try {
+              const response = await fetch('/sites', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                },
+                body: JSON.stringify(payload),
+              });
+
+              if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                const msg = errData.error || 'Failed to create site (HTTP ' + response.status + ')';
+                if (errorBox) {
+                  errorBox.textContent = msg;
+                  errorBox.classList.remove('hidden');
+                } else {
+                  alert(msg);
+                }
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Site';
+                return;
+              }
+
+              const newSite = await response.json();
+              const select = document.getElementById('launch_site_id');
+              if (select) {
+                const opt = document.createElement('option');
+                opt.value = newSite.id;
+                opt.textContent = newSite.name + (newSite.maxAltitudeAglM ? ' (Ceiling: ' + newSite.maxAltitudeAglM + 'm AGL)' : '');
+                opt.selected = true;
+                select.appendChild(opt);
+                select.value = newSite.id;
+              }
+
+              // Reset modal inputs
+              if (nameInput) nameInput.value = '';
+              const latEl = document.getElementById('modal_site_lat');
+              if (latEl) latEl.value = '';
+              const lngEl = document.getElementById('modal_site_lng');
+              if (lngEl) lngEl.value = '';
+              const ceilEl = document.getElementById('modal_site_max_alt');
+              if (ceilEl) ceilEl.value = '';
+              const notesEl = document.getElementById('modal_site_notes');
+              if (notesEl) notesEl.value = '';
+
+              modal.close();
+            } catch (err) {
+              const msg = err && err.message ? err.message : 'Network error';
+              if (errorBox) {
+                errorBox.textContent = 'Error: ' + msg;
+                errorBox.classList.remove('hidden');
+              } else {
+                alert('Error creating launch site: ' + msg);
+              }
+            } finally {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Create Site';
+            }
+          });
+        })();
+      </script>
     </div>
   `
 
@@ -925,33 +1171,37 @@ export function editEventFormView(
           </div>
 
           <!-- Safety Officers Grid -->
+          <input type="hidden" name="rso_user_id" value="${event.rsoUserId || ''}" />
+          <input type="hidden" name="lco_user_id" value="${event.lcoUserId || ''}" />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label for="rso_user_id" class="block text-sm font-semibold text-slate-200 mb-1">
-                Range Safety Officer (RSO User ID)
+              <label for="rso_name" class="block text-sm font-semibold text-slate-200 mb-1">
+                Range Safety Officer (RSO)
               </label>
               <input
                 type="text"
-                id="rso_user_id"
-                name="rso_user_id"
-                value="${event.rsoUserId || ''}"
-                placeholder="Optional User UUID"
-                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+                id="rso_name"
+                name="rso_name"
+                value="${event.rsoName || ''}"
+                placeholder="e.g. Andrew Buttery"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
+              <p class="text-xs text-slate-500 mt-1">Designated Range Safety Officer conducting safety inspections.</p>
             </div>
 
             <div>
-              <label for="lco_user_id" class="block text-sm font-semibold text-slate-200 mb-1">
-                Launch Control Officer (LCO User ID)
+              <label for="lco_name" class="block text-sm font-semibold text-slate-200 mb-1">
+                Launch Control Officer (LCO)
               </label>
               <input
                 type="text"
-                id="lco_user_id"
-                name="lco_user_id"
-                value="${event.lcoUserId || ''}"
-                placeholder="Optional User UUID"
-                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm font-mono"
+                id="lco_name"
+                name="lco_name"
+                value="${event.lcoName || ''}"
+                placeholder="e.g. Jerome Pong"
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent text-sm"
               />
+              <p class="text-xs text-slate-500 mt-1">Designated Launch Control Officer overseeing the firing system.</p>
             </div>
           </div>
 
