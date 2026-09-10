@@ -547,7 +547,7 @@ const handleLogout = async (c: any) => {
 
   const cookie = createLogoutCookie()
   const loggedOutMarker = createLoggedOutMarkerCookie()
-  const clearWebAuthn = 'webauthn_challenge=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+  const clearWebAuthn = 'webauthn_challenge=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
 
   const headers = new Headers()
   headers.set('Set-Cookie', cookie)
@@ -698,7 +698,7 @@ authRouter.post('/auth/webauthn/register-options', async (c) => {
     })
     .catch(() => {})
 
-  const cookieVal = `webauthn_challenge=${challenge}; Path=/; HttpOnly; SameSite=Lax; Max-Age=120`
+  const cookieVal = `webauthn_challenge=${challenge}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=120`
   c.header('Set-Cookie', cookieVal)
 
   return c.json({
@@ -810,7 +810,7 @@ const handleLoginOptions = async (c: any) => {
     })
     .catch(() => {})
 
-  const cookieVal = `webauthn_challenge=${challenge}; Path=/; HttpOnly; SameSite=Lax; Max-Age=120`
+  const cookieVal = `webauthn_challenge=${challenge}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=120`
   c.header('Set-Cookie', cookieVal)
 
   return c.json({

@@ -26,6 +26,7 @@ import {
   createLoggedOutMarkerCookie,
   getSessionMaxAge,
   SESSION_MAX_AGE_SECONDS,
+  resolveAuthSecret,
 } from '../services/auth'
 
 const PUBLIC_PATHS = [
@@ -294,6 +295,7 @@ export async function authMiddleware(c: Context, next: Next) {
   let invalidSession = false
   const hasLoggedOutMarker = cookies.triplet_logged_out === '1'
   const maxAgeSeconds = getSessionMaxAge(c.env)
+  const authSecret = resolveAuthSecret(c.env)
 
   // 2. Cookie session with D1 server-side validation (checks all candidates if multiple triplet_session cookies are sent)
   if (cookies.triplet_session !== undefined) {
@@ -306,7 +308,7 @@ export async function authMiddleware(c: Context, next: Next) {
         const res = await validateSessionToken(
           db,
           tokenCandidate,
-          (c.env as any)?.AUTH_SECRET,
+          authSecret,
           isTestOrLocal,
           maxAgeSeconds,
         )
@@ -373,7 +375,7 @@ export async function authMiddleware(c: Context, next: Next) {
         const res = await validateSessionToken(
           db,
           token,
-          (c.env as any)?.AUTH_SECRET,
+          authSecret,
           isTestOrLocal,
           maxAgeSeconds,
         )
@@ -387,8 +389,8 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 5. Direct developer / test flyer header
-  if (!flyer && !invalidSession) {
+  // 5. Direct developer / test flyer header (strictly guarded to test and local environments - BL-01)
+  if (isTestOrLocal && !flyer && !invalidSession) {
     const headerUserId = c.req.header('x-flyer-id')
     const headerUserEmail = c.req.header('x-flyer-email')
     if (headerUserId) {

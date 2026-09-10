@@ -200,10 +200,28 @@ export async function getMotorImportHandler(c: any) {
 
 /**
  * Motor CSV Import Action (POST /motors/import).
+ * Enforces authentication, payload size caps, and bounded row parsing (BL-15).
  */
 export async function postMotorImportHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const isTestOrLocal =
+    Boolean((c.env as any)?.TEST_MIGRATIONS) ||
+    c.env?.ENVIRONMENT === 'test'
+  const flyer = (c.get as any)('user') || (isTestOrLocal ? await getActiveFlyer(db) : null)
+
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      return c.redirect('/login', 302)
+    }
+    return c.json({ error: 'Unauthorized: Authentication required to import motors' }, 401)
+  }
+
+  // Enforce request size limit (BL-15)
+  const contentLength = parseInt(c.req.header('content-length') || '0', 10)
+  if (contentLength > 2 * 1024 * 1024) {
+    return c.text('Payload Too Large: CSV upload exceeds 2MB limit (BL-15)', 413)
+  }
 
   let csvContent = ''
   const contentType = c.req.header('content-type') || ''
@@ -225,6 +243,10 @@ export async function postMotorImportHandler(c: any) {
   } else {
     const body = await c.req.parseBody().catch(() => ({}))
     csvContent = (body.csv_data || body.csv || '') as string
+  }
+
+  if (csvContent.length > 2 * 1024 * 1024) {
+    return c.text('Payload Too Large: CSV upload exceeds 2MB limit (BL-15)', 413)
   }
 
   if (!csvContent || csvContent.trim() === '') {

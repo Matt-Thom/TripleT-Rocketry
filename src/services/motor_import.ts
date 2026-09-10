@@ -50,8 +50,11 @@ export interface MotorImportResult {
   errors: string[]
 }
 
+export const MAX_CSV_ROWS = 5000
+
 /**
  * Parses raw CSV text according to RFC 4180 rules.
+ * Enforces a bounded row count to prevent CPU/memory exhaustion (BL-15).
  */
 export function parseCsvRows(csvText: string): string[][] {
   const rows: string[][] = []
@@ -93,6 +96,9 @@ export function parseCsvRows(csvText: string): string[][] {
         currentRow.push(currentField.trim())
         currentField = ''
         if (currentRow.some((f) => f !== '')) {
+          if (rows.length >= MAX_CSV_ROWS) {
+            throw new Error(`CSV row count exceeds maximum allowed limit (${MAX_CSV_ROWS} rows)`)
+          }
           rows.push(currentRow)
         }
         currentRow = []
@@ -101,6 +107,9 @@ export function parseCsvRows(csvText: string): string[][] {
         currentRow.push(currentField.trim())
         currentField = ''
         if (currentRow.some((f) => f !== '')) {
+          if (rows.length >= MAX_CSV_ROWS) {
+            throw new Error(`CSV row count exceeds maximum allowed limit (${MAX_CSV_ROWS} rows)`)
+          }
           rows.push(currentRow)
         }
         currentRow = []
@@ -113,9 +122,14 @@ export function parseCsvRows(csvText: string): string[][] {
   }
 
   // Final field and row if any
-  currentRow.push(currentField.trim())
-  if (currentRow.some((f) => f !== '')) {
-    rows.push(currentRow)
+  if (currentField !== '' || currentRow.length > 0) {
+    currentRow.push(currentField.trim())
+    if (currentRow.some((f) => f !== '')) {
+      if (rows.length >= MAX_CSV_ROWS) {
+        throw new Error(`CSV row count exceeds maximum allowed limit (${MAX_CSV_ROWS} rows)`)
+      }
+      rows.push(currentRow)
+    }
   }
 
   return rows
@@ -311,7 +325,18 @@ export function parseMotorsCsv(csvContent: string): {
     }
   }
 
-  const rows = parseCsvRows(csvContent)
+  let rows: string[][]
+  try {
+    rows = parseCsvRows(csvContent)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return {
+      motors: [],
+      errors: [msg],
+      error: msg,
+    }
+  }
+
   if (rows.length < 2) {
     return {
       motors: [],

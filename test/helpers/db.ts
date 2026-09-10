@@ -50,7 +50,10 @@ export async function seedTestUser(
     .values({
       email: overrides.email ?? `flyer-${crypto.randomUUID().slice(0, 8)}@example.com`,
       displayName: overrides.displayName ?? 'TripleT Pilot',
-      passwordHash: overrides.passwordHash ?? 'argon2id-hash-placeholder',
+      // Genuine PBKDF2 hash for 'TestPassword123!' (BL-02 fixture remediation)
+      passwordHash:
+        overrides.passwordHash ??
+        'pbkdf2$100000$94c071ead342a98237ddc6e888de8e73$e1f44c60c58bcd981adb201fefb795226a85b2ef39ed4a309b931ce11cde7399',
       isActive: overrides.isActive ?? true,
       ...overrides,
     })

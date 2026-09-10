@@ -51,26 +51,18 @@ export async function hashPassword(password: string): Promise<string> {
 
 /**
  * Verify a plain-text password against a stored password hash.
- * Supports PBKDF2 format, as well as legacy/test placeholders for backwards compatibility.
+ * Strictly verifies PBKDF2 format and uses constant-time comparison (BL-02, BL-14).
+ * Placeholder hashes and plaintext comparisons are rejected.
  */
 export async function verifyPassword(
   password: string,
   storedHash: string,
 ): Promise<boolean> {
-  if (!storedHash) return false
-
-  // Backwards compatibility for seeded demo/test users
-  if (
-    storedHash === 'seeded_flyer_default' ||
-    storedHash === 'argon2id-hash-placeholder' ||
-    storedHash === password
-  ) {
-    return true
-  }
+  if (!storedHash || typeof storedHash !== 'string') return false
 
   const parts = storedHash.split('$')
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') {
-    return storedHash === password
+    return false
   }
 
   const iterations = parseInt(parts[1], 10)
@@ -105,7 +97,7 @@ export async function verifyPassword(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
 
-  return actualHashHex === expectedHashHex
+  return timingSafeEqual(actualHashHex, expectedHashHex)
 }
 
 /**
@@ -292,6 +284,7 @@ export function parseCookies(cookieHeader: string | null): Record<string, string
 
 /**
  * Generate Set-Cookie header for an active session.
+ * Emits HttpOnly, Secure, and SameSite=Lax (BL-06).
  */
 export function createSessionCookie(
   token: string,
@@ -302,28 +295,54 @@ export function createSessionCookie(
     typeof maxAgeSeconds === 'number' && maxAgeSeconds > 0
       ? maxAgeSeconds
       : SESSION_MAX_AGE_SECONDS
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(clean)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${effectiveMaxAge}`
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(clean)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${effectiveMaxAge}`
 }
 
 /**
  * Generate Set-Cookie header to invalidate/clear the session.
+ * Emits HttpOnly, Secure, and SameSite=Lax with Max-Age=0 (BL-06).
  */
 export function createLogoutCookie(): string {
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+}
+
+/**
+ * Resolve session authentication secret from environment (BL-03).
+ * In production/staging, fails closed if AUTH_SECRET is missing or default.
+ */
+export function resolveAuthSecret(env?: any): string {
+  const secret = env?.AUTH_SECRET
+  const envName = env?.ENVIRONMENT
+  const isTestOrLocal =
+    Boolean(env?.TEST_MIGRATIONS) ||
+    envName === 'test'
+  const isRealProdOrStaging =
+    !isTestOrLocal && (envName === 'production' || envName === 'staging')
+
+  if (isRealProdOrStaging) {
+    if (!secret || secret === DEFAULT_AUTH_SECRET) {
+      throw new Error(
+        'FATAL: AUTH_SECRET binding is unset or using default secret in production/staging environment (BL-03).'
+      )
+    }
+    return secret
+  }
+
+  return secret || DEFAULT_AUTH_SECRET
 }
 
 /**
  * Generate Set-Cookie header to set client-side logged-out marker.
  */
 export function createLoggedOutMarkerCookie(): string {
-  return `${LOGGED_OUT_COOKIE_NAME}=1; Path=/; SameSite=Lax; Max-Age=86400`
+  return `${LOGGED_OUT_COOKIE_NAME}=1; Path=/; Secure; SameSite=Lax; Max-Age=86400`
 }
 
 /**
  * Generate Set-Cookie header to clear client-side logged-out marker upon successful login.
  */
 export function createClearLoggedOutCookie(): string {
-  return `${LOGGED_OUT_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+  return `${LOGGED_OUT_COOKIE_NAME}=; Path=/; Secure; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
 }
 
 
