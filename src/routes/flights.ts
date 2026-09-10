@@ -1,0 +1,1497 @@
+/**
+ * Flight logging and preflight range companion routes for TripleT-Rocketry.
+ *
+ * Implements Milestone 5 endpoints:
+ * - GET /flights: Logbook listing with outcome badges and soft-gate safety indicators.
+ * - GET /flights/new: Preflight flight creation form.
+ * - POST /flights/preflight-check: Dynamic HTMX soft-gate evaluator.
+ * - POST /flights: Flight record persistence, soft-gate enforcement (422 if unacknowledged),
+ *                  and atomic motor inventory decrement.
+ * - GET /flights/:id: Complete flight logbook view with telemetry, hardware, and safety record.
+ */
+
+import { Hono } from 'hono'
+import { desc, asc, eq, sql, inArray, and, gt } from 'drizzle-orm'
+import { drizzle } from 'drizzle-orm/d1'
+import * as schema from '../db/schema'
+import { getActiveFlyer } from '../db/context'
+import { evaluateSoftGates } from '../services/soft_gates'
+import type { TraceContext } from '../logging'
+import {
+  flightDetailView,
+  flightsListView,
+  preflightFormView,
+  preflightWarningFragment,
+  type FlightListItem,
+} from '../views/flights'
+import { pageLayout } from '../views/layout'
+
+type Bindings = {
+  DB: D1Database
+  ENVIRONMENT: string
+  PROJECT_ID: string
+}
+
+type Variables = {
+  trace: TraceContext
+}
+
+export const flightsRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
+
+/**
+ * GET /flights — Flight Logbook List View
+ */
+flightsRouter.get('/', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const flightRows = await db
+    .select({
+      id: schema.flights.id,
+      flightNumber: schema.flights.flightNumber,
+      flownAt: schema.flights.flownAt,
+      logType: schema.flights.logType,
+      isFirstFlight: schema.flights.isFirstFlight,
+      certAttempt: schema.flights.certAttempt,
+      padNumber: schema.flights.padNumber,
+      altitudeAglM: schema.flights.altitudeAglM,
+      maxVelocityMps: schema.flights.maxVelocityMps,
+      outcome: schema.flights.outcome,
+      softGateWarnings: schema.flights.softGateWarnings,
+      proceededDespiteWarnings: schema.flights.proceededDespiteWarnings,
+      rocketName: schema.rockets.name,
+      configVersion: schema.rocketConfigurations.version,
+      motorMfr: schema.motors.manufacturer,
+      motorModel: schema.motors.model,
+      siteName: schema.launchSites.name,
+      eventName: schema.launchEvents.name,
+    })
+    .from(schema.flights)
+    .leftJoin(
+      schema.rocketConfigurations,
+      eq(schema.flights.rocketConfigurationId, schema.rocketConfigurations.id),
+    )
+    .leftJoin(
+      schema.rockets,
+      eq(schema.rocketConfigurations.rocketId, schema.rockets.id),
+    )
+    .leftJoin(
+      schema.motors,
+      eq(schema.flights.motorId, schema.motors.id),
+    )
+    .leftJoin(
+      schema.launchSites,
+      eq(schema.flights.launchSiteId, schema.launchSites.id),
+    )
+    .leftJoin(
+      schema.launchEvents,
+      eq(schema.flights.launchEventId, schema.launchEvents.id),
+    )
+    .orderBy(desc(schema.flights.flownAt), desc(schema.flights.createdAt))
+
+  const flights: FlightListItem[] = flightRows.map((f) => ({
+    id: f.id,
+    flightNumber: f.flightNumber,
+    flownAt: f.flownAt,
+    logType: f.logType,
+    isFirstFlight: Boolean(f.isFirstFlight),
+    certAttempt: f.certAttempt || null,
+    padNumber: f.padNumber || null,
+    altitudeAglM: f.altitudeAglM,
+    maxVelocityMps: f.maxVelocityMps,
+    outcome: f.outcome,
+    rocketName: f.rocketName || null,
+    configVersion: f.configVersion || null,
+    motorMfr: f.motorMfr || null,
+    motorModel: f.motorModel || null,
+    softGateWarnings: (f.softGateWarnings as string[] | null) || [],
+    proceededDespiteWarnings: Boolean(f.proceededDespiteWarnings),
+    siteName: f.siteName || null,
+    eventName: f.eventName || null,
+  }))
+
+  const unitsQuery = c.req.query('units')?.toLowerCase()
+  const unitSystem: 'imperial' | 'metric' = unitsQuery === 'ft' || unitsQuery === 'feet' ? 'imperial' : 'metric'
+  const units = unitSystem === 'imperial' ? 'ft' : 'm'
+
+  const content = flightsListView(flights, units, unitSystem)
+  const fullHtml = pageLayout({
+    title: 'Flight Logbook',
+    activeTab: 'flights',
+    content,
+    user: activeFlyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})
+
+/**
+ * GET /flights/new — Flight Creation & Preflight Form
+ */
+flightsRouter.get('/new', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const activeFlyer = await getActiveFlyer(db)
+
+  const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
+    await Promise.all([
+      db
+        .select({
+          id: schema.rockets.id,
+          name: schema.rockets.name,
+          lengthMm: schema.rockets.lengthMm,
+          bodyDiameterMm: schema.rockets.bodyDiameterMm,
+        })
+        .from(schema.rockets),
+      db
+        .select({
+          id: schema.rocketConfigurations.id,
+          rocketId: schema.rocketConfigurations.rocketId,
+          version: schema.rocketConfigurations.version,
+          stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
+          dryMassG: schema.rocketConfigurations.dryMassG,
+          loadedMassG: schema.rocketConfigurations.loadedMassG,
+          lengthMm: schema.rocketConfigurations.lengthMm,
+          bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
+        })
+        .from(schema.rocketConfigurations),
+      db
+        .select({
+          id: schema.motors.id,
+          manufacturer: schema.motors.manufacturer,
+          model: schema.motors.model,
+          impulseClass: schema.motors.impulseClass,
+          delayS: schema.motors.delayS,
+          diameterMm: schema.motors.diameterMm,
+          hardware: schema.motors.hardware,
+          casingReusable: schema.motors.casingReusable,
+        })
+        .from(schema.motors)
+        .orderBy(schema.motors.manufacturer, schema.motors.model),
+      db
+        .select({
+          id: schema.motorInventories.id,
+          motorId: schema.motorInventories.motorId,
+          quantityOnHand: schema.motorInventories.quantityOnHand,
+          expendedCount: schema.motorInventories.expendedCount,
+          motorModel: schema.motors.model,
+          motorMfr: schema.motors.manufacturer,
+        })
+        .from(schema.motorInventories)
+        .leftJoin(schema.motors, eq(schema.motorInventories.motorId, schema.motors.id))
+        .where(eq(schema.motorInventories.userId, activeFlyer.id)),
+      db
+        .select({
+          id: schema.launchSites.id,
+          name: schema.launchSites.name,
+          maxAltitudeAglM: schema.launchSites.maxAltitudeAglM,
+        })
+        .from(schema.launchSites)
+        .orderBy(schema.launchSites.name),
+      db
+        .select({
+          id: schema.launchEvents.id,
+          name: schema.launchEvents.name,
+          launchSiteId: schema.launchEvents.launchSiteId,
+          startsOn: schema.launchEvents.startsOn,
+          endsOn: schema.launchEvents.endsOn,
+          rsoName: schema.launchEvents.rsoName,
+          lcoName: schema.launchEvents.lcoName,
+          siteName: schema.launchSites.name,
+        })
+        .from(schema.launchEvents)
+        .leftJoin(schema.launchSites, eq(schema.launchEvents.launchSiteId, schema.launchSites.id))
+        .orderBy(desc(schema.launchEvents.startsOn), asc(schema.launchEvents.name)),
+      db
+        .select({
+          id: schema.users.id,
+          displayName: schema.users.displayName,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.isActive, true))
+        .orderBy(schema.users.displayName),
+    ])
+
+  const inventories = inventoryRows.map((inv) => ({
+    id: inv.id,
+    motorId: inv.motorId,
+    quantityOnHand: inv.quantityOnHand,
+    expendedCount: inv.expendedCount,
+    motorModel: inv.motorMfr && inv.motorModel ? `${inv.motorMfr} ${inv.motorModel}` : inv.motorModel,
+  }))
+
+  const queryLaunchEventId = c.req.query('launch_event_id') || ''
+  const queryLaunchSiteId = c.req.query('launch_site_id') || ''
+  const queryRocketConfigId = c.req.query('rocket_configuration_id') || ''
+  const queryMotorId = c.req.query('motor_id') || ''
+
+  // Pre-fill duty officers if launch_event_id was provided
+  const selectedEvent = queryLaunchEventId
+    ? launchEvents.find((e) => e.id === queryLaunchEventId)
+    : null
+
+  const initialValues: Record<string, any> = {
+    launch_event_id: queryLaunchEventId,
+    launch_site_id: queryLaunchSiteId || selectedEvent?.launchSiteId || '',
+    rocket_configuration_id: queryRocketConfigId,
+    motor_id: queryMotorId,
+    rso_name: selectedEvent?.rsoName || '',
+    lco_name: selectedEvent?.lcoName || '',
+    cert_attempt: 'none',
+    is_first_flight: false,
+  }
+
+  const content = preflightFormView({
+    rockets,
+    configurations,
+    motors,
+    inventories,
+    launchSites,
+    launchEvents,
+    users,
+    flyerCertLevel: activeFlyer.maxCertLevel,
+    initialValues,
+  })
+
+  const fullHtml = pageLayout({
+    title: 'Log Flight',
+    activeTab: 'flights',
+    content,
+    user: activeFlyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})
+
+/**
+ * POST /flights/preflight-check — Dynamic HTMX Soft-Gate Evaluator
+ */
+flightsRouter.post('/preflight-check', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const body = await c.req.parseBody()
+
+  // 1. Flyer certification level
+  const flyerId = body['flyer_id'] ? String(body['flyer_id']).trim() : null
+  let flyerCertLevel = 0
+
+  if (flyerId) {
+    const certs = await db
+      .select()
+      .from(schema.certifications)
+      .where(eq(schema.certifications.userId, flyerId))
+    for (const cert of certs) {
+      if (typeof cert.level === 'number' && cert.level > flyerCertLevel) {
+        flyerCertLevel = cert.level
+      }
+    }
+  } else {
+    const activeFlyer = await getActiveFlyer(db)
+    flyerCertLevel = activeFlyer.maxCertLevel
+  }
+
+  // 2. Rocket configuration stability
+  const rocketConfigId = body['rocket_configuration_id']
+    ? String(body['rocket_configuration_id']).trim()
+    : null
+  let stabilityCalibers: number | null = null
+  if (rocketConfigId) {
+    const [cfg] = await db
+      .select({
+        stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
+        lengthMm: schema.rocketConfigurations.lengthMm,
+        bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
+      })
+      .from(schema.rocketConfigurations)
+      .where(eq(schema.rocketConfigurations.id, rocketConfigId))
+    if (cfg && cfg.stabilityCalibers !== null && cfg.stabilityCalibers !== undefined) {
+      stabilityCalibers = Number(cfg.stabilityCalibers)
+    }
+  }
+
+  // 3. Motor impulse class
+  const motorId = body['motor_id'] ? String(body['motor_id']).trim() : null
+  let motorImpulseClass: string | null = null
+  let motorLabel: string | null = null
+  if (motorId) {
+    const [m] = await db
+      .select({
+        impulseClass: schema.motors.impulseClass,
+        manufacturer: schema.motors.manufacturer,
+        model: schema.motors.model,
+      })
+      .from(schema.motors)
+      .where(eq(schema.motors.id, motorId))
+    if (m) {
+      motorImpulseClass = m.impulseClass ?? null
+      motorLabel = `${m.manufacturer} ${m.model}`
+    }
+  }
+
+  // 4. Launch site waiver ceiling
+  const launchSiteId = body['launch_site_id'] ? String(body['launch_site_id']).trim() : null
+  let siteMaxAltitudeM: number | null = null
+  let siteName: string | null = null
+  if (launchSiteId) {
+    const [s] = await db
+      .select({
+        maxAltitudeAglM: schema.launchSites.maxAltitudeAglM,
+        name: schema.launchSites.name,
+      })
+      .from(schema.launchSites)
+      .where(eq(schema.launchSites.id, launchSiteId))
+    if (s) {
+      siteMaxAltitudeM = s.maxAltitudeAglM !== null && s.maxAltitudeAglM !== undefined ? Number(s.maxAltitudeAglM) : null
+      siteName = s.name ?? null
+    }
+  }
+
+  // 5. Expected / target altitude
+  const altRaw = body['expected_altitude_m'] ?? body['altitude_agl_m']
+  let expectedAltitudeM =
+    altRaw !== undefined && altRaw !== null && altRaw !== '' && !isNaN(Number(altRaw))
+      ? Number(altRaw)
+      : null
+  if (expectedAltitudeM === null && body['altitude_agl_ft'] !== undefined && body['altitude_agl_ft'] !== '' && !isNaN(Number(body['altitude_agl_ft']))) {
+    expectedAltitudeM = Number((Number(body['altitude_agl_ft']) * 0.3048).toFixed(2))
+  }
+
+  // Evaluate pure domain soft-gate rules
+  const warnings = evaluateSoftGates({
+    flyerCertLevel,
+    motorImpulseClass,
+    motorLabel,
+    stabilityCalibers,
+    expectedAltitudeM,
+    siteMaxAltitudeM,
+    siteName,
+  })
+
+  const fragment = preflightWarningFragment(warnings)
+  return c.html(fragment, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})
+
+/**
+ * POST /flights — Flight Creation & Override Persistence
+ */
+flightsRouter.post('/', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const activeFlyer = await getActiveFlyer(db)
+  const body = await c.req.parseBody()
+
+  // Flyer identity
+  const flyerId = body['flyer_id'] ? String(body['flyer_id']).trim() : activeFlyer.id
+
+  // Form field extractions
+  const logType = body['log_type'] === 'preflight' ? 'preflight' : 'actual'
+  const rocketConfigId = body['rocket_configuration_id']
+    ? String(body['rocket_configuration_id']).trim()
+    : null
+  const motorId = body['motor_id'] ? String(body['motor_id']).trim() : null
+  let motorInventoryId = body['motor_inventory_id']
+    ? String(body['motor_inventory_id']).trim()
+    : null
+
+  // Auto-link inventory if motor_inventory_id was not explicitly passed but flyer has stock
+  if (!motorInventoryId && motorId) {
+    const [availableInv] = await db
+      .select({ id: schema.motorInventories.id, quantityOnHand: schema.motorInventories.quantityOnHand })
+      .from(schema.motorInventories)
+      .where(
+        and(
+          eq(schema.motorInventories.userId, flyerId),
+          eq(schema.motorInventories.motorId, motorId),
+          gt(schema.motorInventories.quantityOnHand, 0),
+        ),
+      )
+      .limit(1)
+
+    if (availableInv) {
+      motorInventoryId = availableInv.id
+    }
+  }
+
+  const launchSiteId = body['launch_site_id'] ? String(body['launch_site_id']).trim() : null
+  const launchEventId = body['launch_event_id'] ? String(body['launch_event_id']).trim() : null
+
+  let altitudeAglM: number | null = null
+  if (body['altitude_agl_m'] !== undefined && body['altitude_agl_m'] !== '' && !isNaN(Number(body['altitude_agl_m']))) {
+    altitudeAglM = Number(body['altitude_agl_m'])
+  } else if (body['altitude_agl_ft'] !== undefined && body['altitude_agl_ft'] !== '' && !isNaN(Number(body['altitude_agl_ft']))) {
+    altitudeAglM = Number((Number(body['altitude_agl_ft']) * 0.3048).toFixed(2))
+  }
+
+  const expectedAltitudeM =
+    body['expected_altitude_m'] !== undefined &&
+    body['expected_altitude_m'] !== '' &&
+    !isNaN(Number(body['expected_altitude_m']))
+      ? Number(body['expected_altitude_m'])
+      : altitudeAglM
+
+  const altitudeMslM =
+    body['altitude_msl_m'] !== undefined && body['altitude_msl_m'] !== '' && !isNaN(Number(body['altitude_msl_m']))
+      ? Number(body['altitude_msl_m'])
+      : null
+  const maxVelocityMps =
+    body['max_velocity_mps'] !== undefined && body['max_velocity_mps'] !== '' && !isNaN(Number(body['max_velocity_mps']))
+      ? Number(body['max_velocity_mps'])
+      : null
+  const maxAccelG =
+    body['max_accel_g'] !== undefined && body['max_accel_g'] !== '' && !isNaN(Number(body['max_accel_g']))
+      ? Number(body['max_accel_g'])
+      : null
+  const flightNumber =
+    body['flight_number'] !== undefined && body['flight_number'] !== '' && !isNaN(Number(body['flight_number']))
+      ? parseInt(String(body['flight_number']), 10)
+      : null
+
+  const windMps =
+    body['wind_mps'] !== undefined && body['wind_mps'] !== '' && !isNaN(Number(body['wind_mps']))
+      ? Number(body['wind_mps'])
+      : null
+  const windDirDeg =
+    body['wind_dir_deg'] !== undefined && body['wind_dir_deg'] !== '' && !isNaN(Number(body['wind_dir_deg']))
+      ? Number(body['wind_dir_deg'])
+      : null
+  const temperatureC =
+    body['temperature_c'] !== undefined && body['temperature_c'] !== '' && !isNaN(Number(body['temperature_c']))
+      ? Number(body['temperature_c'])
+      : null
+  const visibilityM =
+    body['visibility_m'] !== undefined && body['visibility_m'] !== '' && !isNaN(Number(body['visibility_m']))
+      ? Number(body['visibility_m'])
+      : null
+  const ceilingM =
+    body['ceiling_m'] !== undefined && body['ceiling_m'] !== '' && !isNaN(Number(body['ceiling_m']))
+      ? Number(body['ceiling_m'])
+      : null
+
+  const outcome = (body['outcome'] as any) || 'successful'
+  const notes = body['notes'] ? String(body['notes']) : null
+
+  let flownAt = Date.now()
+  if (body['flown_at']) {
+    const parsedTime = Number(body['flown_at'])
+    if (!isNaN(parsedTime)) {
+      flownAt = parsedTime
+    } else {
+      const dateParsed = new Date(String(body['flown_at'])).getTime()
+      if (!isNaN(dateParsed)) {
+        flownAt = dateParsed
+      }
+    }
+  }
+
+  // Duty officer extractions
+  const rsoNameRaw = body['rso_name'] ? String(body['rso_name']).trim() : null
+  const lcoNameRaw = body['lco_name'] ? String(body['lco_name']).trim() : null
+  const rsoUserIdRaw = body['rso_user_id'] ? String(body['rso_user_id']).trim() : null
+  const lcoUserIdRaw = body['lco_user_id'] ? String(body['lco_user_id']).trim() : null
+
+  // Validate and sanitize candidate officer IDs against users table to prevent FK crashes
+  let sanitizedRsoUserId: string | null = null
+  let sanitizedLcoUserId: string | null = null
+
+  const candidateOfficerIds = [rsoUserIdRaw, lcoUserIdRaw].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  )
+
+  const validUserMap = new Map<string, string>()
+  if (candidateOfficerIds.length > 0) {
+    const matchingUsers = await db
+      .select({ id: schema.users.id, displayName: schema.users.displayName })
+      .from(schema.users)
+      .where(inArray(schema.users.id, candidateOfficerIds))
+
+    for (const u of matchingUsers) {
+      validUserMap.set(u.id, u.displayName)
+    }
+
+    if (rsoUserIdRaw && validUserMap.has(rsoUserIdRaw)) {
+      sanitizedRsoUserId = rsoUserIdRaw
+    }
+    if (lcoUserIdRaw && validUserMap.has(lcoUserIdRaw)) {
+      sanitizedLcoUserId = lcoUserIdRaw
+    }
+  }
+
+  const rsoName =
+    rsoNameRaw && rsoNameRaw.length > 0
+      ? rsoNameRaw
+      : sanitizedRsoUserId
+        ? validUserMap.get(sanitizedRsoUserId) ?? null
+        : null
+
+  const lcoName =
+    lcoNameRaw && lcoNameRaw.length > 0
+      ? lcoNameRaw
+      : sanitizedLcoUserId
+        ? validUserMap.get(sanitizedLcoUserId) ?? null
+        : null
+
+  // Flight Card Category Extractions
+  const isFirstFlight =
+    body['is_first_flight'] === 'true' ||
+    body['is_first_flight'] === '1' ||
+    body['is_first_flight'] === 'on' ||
+    (body['is_first_flight'] as any) === true
+
+  const certAttemptRaw = body['cert_attempt'] ? String(body['cert_attempt']).trim().toLowerCase() : 'none'
+  const certAttempt = ['none', 'mpr', 'l1', 'l2', 'l3'].includes(certAttemptRaw) ? (certAttemptRaw as any) : 'none'
+
+  const buildTypeRaw = body['build_type'] ? String(body['build_type']).trim() : null
+  const buildType = buildTypeRaw && buildTypeRaw.length > 0 ? (buildTypeRaw as any) : null
+
+  const stabilityCheckMethod = body['stability_check_method'] ? String(body['stability_check_method']).trim() : null
+
+  const stabilityMargin =
+    body['stability_margin'] !== undefined && body['stability_margin'] !== '' && !isNaN(Number(body['stability_margin']))
+      ? Number(body['stability_margin'])
+      : null
+
+  const motorType = body['motor_type'] ? String(body['motor_type']).trim() : null
+
+  const totalWeightG =
+    body['total_weight_g'] !== undefined && body['total_weight_g'] !== '' && !isNaN(Number(body['total_weight_g']))
+      ? Number(body['total_weight_g'])
+      : null
+
+  const recoverySystem = body['recovery_system'] ? (String(body['recovery_system']).trim() as any) : null
+  const recoverySize = body['recovery_size'] ? String(body['recovery_size']).trim() : null
+  const deploymentMethod = body['deployment_method'] ? (String(body['deployment_method']).trim() as any) : null
+  const mainDeployAltitude = body['main_deploy_altitude'] ? String(body['main_deploy_altitude']).trim() : null
+  const padNumber = body['pad_number'] ? String(body['pad_number']).trim() : null
+
+  // Soft-gate safety evaluation
+  let warnings: string[] = []
+
+  // Check if warnings were pre-serialized in form
+  if (body['soft_gate_warnings']) {
+    try {
+      const parsed = JSON.parse(String(body['soft_gate_warnings']))
+      if (Array.isArray(parsed)) {
+        warnings = parsed
+      }
+    } catch {
+      // ignore parse failure and evaluate server-side
+    }
+  }
+
+  // Always verify/evaluate server-side against live entities
+  let flyerCertLevel = 0
+  if (flyerId) {
+    const certs = await db
+      .select()
+      .from(schema.certifications)
+      .where(eq(schema.certifications.userId, flyerId))
+    for (const cert of certs) {
+      if (typeof cert.level === 'number' && cert.level > flyerCertLevel) {
+        flyerCertLevel = cert.level
+      }
+    }
+  }
+
+  let stabilityCalibers: number | null = null
+  if (rocketConfigId) {
+    const [cfg] = await db
+      .select({ stabilityCalibers: schema.rocketConfigurations.stabilityCalibers })
+      .from(schema.rocketConfigurations)
+      .where(eq(schema.rocketConfigurations.id, rocketConfigId))
+    if (cfg && cfg.stabilityCalibers !== null && cfg.stabilityCalibers !== undefined) {
+      stabilityCalibers = Number(cfg.stabilityCalibers)
+    }
+  }
+
+  let motorImpulseClass: string | null = null
+  let motorLabel: string | null = null
+  if (motorId) {
+    const [m] = await db
+      .select({
+        impulseClass: schema.motors.impulseClass,
+        manufacturer: schema.motors.manufacturer,
+        model: schema.motors.model,
+      })
+      .from(schema.motors)
+      .where(eq(schema.motors.id, motorId))
+    if (m) {
+      motorImpulseClass = m.impulseClass ?? null
+      motorLabel = `${m.manufacturer} ${m.model}`
+    }
+  }
+
+  let siteMaxAltitudeM: number | null = null
+  let siteName: string | null = null
+  if (launchSiteId) {
+    const [s] = await db
+      .select({
+        maxAltitudeAglM: schema.launchSites.maxAltitudeAglM,
+        name: schema.launchSites.name,
+      })
+      .from(schema.launchSites)
+      .where(eq(schema.launchSites.id, launchSiteId))
+    if (s) {
+      siteMaxAltitudeM = s.maxAltitudeAglM !== null && s.maxAltitudeAglM !== undefined ? Number(s.maxAltitudeAglM) : null
+      siteName = s.name ?? null
+    }
+  }
+
+  const serverWarnings = evaluateSoftGates({
+    flyerCertLevel,
+    motorImpulseClass,
+    motorLabel,
+    stabilityCalibers,
+    expectedAltitudeM,
+    siteMaxAltitudeM,
+    siteName,
+  })
+
+  // Combine unique warnings
+  const mergedWarnings = Array.from(new Set([...warnings, ...serverWarnings]))
+
+  // Check user acknowledgment checkbox
+  const proceededRaw = body['proceeded_despite_warnings']
+  const isProceeded =
+    proceededRaw === 'true' ||
+    proceededRaw === '1' ||
+    proceededRaw === 'on' ||
+    proceededRaw === 'yes'
+
+  // If warnings triggered and NOT acknowledged: return 422 Unprocessable Entity
+  if (mergedWarnings.length > 0 && !isProceeded) {
+    const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
+      await Promise.all([
+        db
+          .select({
+            id: schema.rockets.id,
+            name: schema.rockets.name,
+            lengthMm: schema.rockets.lengthMm,
+            bodyDiameterMm: schema.rockets.bodyDiameterMm,
+          })
+          .from(schema.rockets),
+        db
+          .select({
+            id: schema.rocketConfigurations.id,
+            rocketId: schema.rocketConfigurations.rocketId,
+            version: schema.rocketConfigurations.version,
+            stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
+            dryMassG: schema.rocketConfigurations.dryMassG,
+            loadedMassG: schema.rocketConfigurations.loadedMassG,
+            lengthMm: schema.rocketConfigurations.lengthMm,
+            bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
+          })
+          .from(schema.rocketConfigurations),
+        db
+          .select({
+            id: schema.motors.id,
+            manufacturer: schema.motors.manufacturer,
+            model: schema.motors.model,
+            impulseClass: schema.motors.impulseClass,
+            delayS: schema.motors.delayS,
+            diameterMm: schema.motors.diameterMm,
+            hardware: schema.motors.hardware,
+            casingReusable: schema.motors.casingReusable,
+          })
+          .from(schema.motors)
+          .orderBy(schema.motors.manufacturer, schema.motors.model),
+        db
+          .select({
+            id: schema.motorInventories.id,
+            motorId: schema.motorInventories.motorId,
+            quantityOnHand: schema.motorInventories.quantityOnHand,
+            expendedCount: schema.motorInventories.expendedCount,
+            motorModel: schema.motors.model,
+            motorMfr: schema.motors.manufacturer,
+          })
+          .from(schema.motorInventories)
+          .leftJoin(schema.motors, eq(schema.motorInventories.motorId, schema.motors.id))
+          .where(eq(schema.motorInventories.userId, activeFlyer.id)),
+        db
+          .select({
+            id: schema.launchSites.id,
+            name: schema.launchSites.name,
+            maxAltitudeAglM: schema.launchSites.maxAltitudeAglM,
+          })
+          .from(schema.launchSites)
+          .orderBy(schema.launchSites.name),
+        db
+          .select({
+            id: schema.launchEvents.id,
+            name: schema.launchEvents.name,
+            launchSiteId: schema.launchEvents.launchSiteId,
+            startsOn: schema.launchEvents.startsOn,
+            endsOn: schema.launchEvents.endsOn,
+            rsoName: schema.launchEvents.rsoName,
+            lcoName: schema.launchEvents.lcoName,
+            siteName: schema.launchSites.name,
+          })
+          .from(schema.launchEvents)
+          .leftJoin(schema.launchSites, eq(schema.launchEvents.launchSiteId, schema.launchSites.id))
+          .orderBy(desc(schema.launchEvents.startsOn), asc(schema.launchEvents.name)),
+        db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.isActive, true))
+          .orderBy(schema.users.displayName),
+      ])
+
+    const inventories = inventoryRows.map((inv) => ({
+      id: inv.id,
+      motorId: inv.motorId,
+      quantityOnHand: inv.quantityOnHand,
+      expendedCount: inv.expendedCount,
+      motorModel: inv.motorMfr && inv.motorModel ? `${inv.motorMfr} ${inv.motorModel}` : inv.motorModel,
+    }))
+
+    const content = preflightFormView({
+      rockets,
+      configurations,
+      motors,
+      inventories,
+      launchSites,
+      launchEvents,
+      users,
+      flyerCertLevel,
+      initialValues: body,
+      warnings: mergedWarnings,
+      error: 'Preflight safety warnings require explicit pilot confirmation before logging.',
+    })
+
+    const fullHtml = pageLayout({
+      title: 'Preflight Safety Warnings',
+      activeTab: 'flights',
+      content,
+      user: (c.get as any)('user') || null,
+    })
+
+    return c.html(fullHtml, 422, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  // Insert flight record
+  const flightId = crypto.randomUUID()
+  const [newFlight] = await db
+    .insert(schema.flights)
+    .values({
+      id: flightId,
+      flyerId,
+      rocketConfigurationId: rocketConfigId,
+      motorId,
+      motorInventoryId,
+      launchSiteId,
+      launchEventId,
+      flightNumber,
+      flownAt,
+      logType,
+      altitudeAglM,
+      altitudeMslM,
+      maxVelocityMps,
+      maxAccelG,
+      windMps,
+      windDirDeg,
+      temperatureC,
+      visibilityM,
+      ceilingM,
+      outcome,
+      notes,
+      rsoUserId: sanitizedRsoUserId,
+      lcoUserId: sanitizedLcoUserId,
+      rsoName: rsoName || null,
+      lcoName: lcoName || null,
+      isFirstFlight,
+      certAttempt,
+      buildType,
+      stabilityCheckMethod,
+      stabilityMargin,
+      motorType,
+      totalWeightG,
+      recoverySystem,
+      recoverySize,
+      deploymentMethod,
+      mainDeployAltitude,
+      padNumber,
+      softGateWarnings: mergedWarnings,
+      proceededDespiteWarnings: mergedWarnings.length > 0 && isProceeded,
+    })
+    .returning()
+
+  // Atomically decrement motor inventory if an actual flight and an inventory item was selected
+  if (logType === 'actual' && motorInventoryId) {
+    await db
+      .update(schema.motorInventories)
+      .set({
+        quantityOnHand: sql`max(0, ${schema.motorInventories.quantityOnHand} - 1)`,
+        expendedCount: sql`${schema.motorInventories.expendedCount} + 1`,
+      })
+      .where(eq(schema.motorInventories.id, motorInventoryId))
+  }
+
+  return c.redirect(`/flights/${newFlight.id}`, 303)
+})
+
+/**
+ * GET /flights/:id/edit — Edit Flight Form View
+ */
+flightsRouter.get('/:id/edit', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const flightId = c.req.param('id')
+  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const [flight] = await db
+    .select()
+    .from(schema.flights)
+    .where(eq(schema.flights.id, flightId))
+
+  if (!flight) {
+    const errorHtml = pageLayout({
+      title: 'Flight Not Found',
+      activeTab: 'flights',
+      content: preflightWarningFragment(['The requested flight log does not exist or has been removed.']),
+      user: activeFlyer,
+    })
+    return c.html(errorHtml, 404, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
+    await Promise.all([
+      db
+        .select({
+          id: schema.rockets.id,
+          name: schema.rockets.name,
+          lengthMm: schema.rockets.lengthMm,
+          bodyDiameterMm: schema.rockets.bodyDiameterMm,
+        })
+        .from(schema.rockets),
+      db
+        .select({
+          id: schema.rocketConfigurations.id,
+          rocketId: schema.rocketConfigurations.rocketId,
+          version: schema.rocketConfigurations.version,
+          stabilityCalibers: schema.rocketConfigurations.stabilityCalibers,
+          dryMassG: schema.rocketConfigurations.dryMassG,
+          loadedMassG: schema.rocketConfigurations.loadedMassG,
+          lengthMm: schema.rocketConfigurations.lengthMm,
+          bodyDiameterMm: schema.rocketConfigurations.bodyDiameterMm,
+        })
+        .from(schema.rocketConfigurations),
+      db
+        .select({
+          id: schema.motors.id,
+          manufacturer: schema.motors.manufacturer,
+          model: schema.motors.model,
+          impulseClass: schema.motors.impulseClass,
+          delayS: schema.motors.delayS,
+          diameterMm: schema.motors.diameterMm,
+          hardware: schema.motors.hardware,
+          casingReusable: schema.motors.casingReusable,
+        })
+        .from(schema.motors)
+        .orderBy(schema.motors.manufacturer, schema.motors.model),
+      db
+        .select({
+          id: schema.motorInventories.id,
+          motorId: schema.motorInventories.motorId,
+          quantityOnHand: schema.motorInventories.quantityOnHand,
+          expendedCount: schema.motorInventories.expendedCount,
+          motorModel: schema.motors.model,
+          motorMfr: schema.motors.manufacturer,
+        })
+        .from(schema.motorInventories)
+        .leftJoin(schema.motors, eq(schema.motorInventories.motorId, schema.motors.id))
+        .where(eq(schema.motorInventories.userId, flight.flyerId)),
+      db
+        .select({
+          id: schema.launchSites.id,
+          name: schema.launchSites.name,
+          maxAltitudeAglM: schema.launchSites.maxAltitudeAglM,
+        })
+        .from(schema.launchSites)
+        .orderBy(schema.launchSites.name),
+      db
+        .select({
+          id: schema.launchEvents.id,
+          name: schema.launchEvents.name,
+          launchSiteId: schema.launchEvents.launchSiteId,
+          startsOn: schema.launchEvents.startsOn,
+          endsOn: schema.launchEvents.endsOn,
+          rsoName: schema.launchEvents.rsoName,
+          lcoName: schema.launchEvents.lcoName,
+          siteName: schema.launchSites.name,
+        })
+        .from(schema.launchEvents)
+        .leftJoin(schema.launchSites, eq(schema.launchEvents.launchSiteId, schema.launchSites.id))
+        .orderBy(desc(schema.launchEvents.startsOn), asc(schema.launchEvents.name)),
+      db
+        .select({
+          id: schema.users.id,
+          displayName: schema.users.displayName,
+        })
+        .from(schema.users)
+        .where(eq(schema.users.isActive, true))
+        .orderBy(schema.users.displayName),
+    ])
+
+  const inventories = inventoryRows.map((inv) => ({
+    id: inv.id,
+    motorId: inv.motorId,
+    quantityOnHand: inv.quantityOnHand,
+    expendedCount: inv.expendedCount,
+    motorModel: inv.motorMfr && inv.motorModel ? `${inv.motorMfr} ${inv.motorModel}` : inv.motorModel,
+  }))
+
+  const initialValues: Record<string, any> = {
+    flyer_id: flight.flyerId,
+    rocket_configuration_id: flight.rocketConfigurationId ?? '',
+    motor_id: flight.motorId ?? '',
+    motor_inventory_id: flight.motorInventoryId ?? '',
+    launch_site_id: flight.launchSiteId ?? '',
+    launch_event_id: flight.launchEventId ?? '',
+    flight_number: flight.flightNumber ?? '',
+    log_type: flight.logType ?? 'actual',
+    altitude_agl_m: flight.altitudeAglM ?? '',
+    altitude_agl_ft: flight.altitudeAglM != null ? (flight.altitudeAglM * 3.28084).toFixed(1) : '',
+    expected_altitude_m: flight.altitudeAglM ?? '',
+    altitude_msl_m: flight.altitudeMslM ?? '',
+    max_velocity_mps: flight.maxVelocityMps ?? '',
+    max_accel_g: flight.maxAccelG ?? '',
+    wind_mps: flight.windMps ?? '',
+    wind_dir_deg: flight.windDirDeg ?? '',
+    temperature_c: flight.temperatureC ?? '',
+    visibility_m: flight.visibilityM ?? '',
+    ceiling_m: flight.ceilingM ?? '',
+    outcome: flight.outcome ?? 'successful',
+    notes: flight.notes ?? '',
+    rso_name: flight.rsoName ?? '',
+    lco_name: flight.lcoName ?? '',
+    rso_user_id: flight.rsoUserId ?? '',
+    lco_user_id: flight.lcoUserId ?? '',
+    is_first_flight: Boolean(flight.isFirstFlight),
+    cert_attempt: flight.certAttempt ?? 'none',
+    build_type: flight.buildType ?? '',
+    stability_check_method: flight.stabilityCheckMethod ?? '',
+    stability_margin: flight.stabilityMargin != null ? flight.stabilityMargin : '',
+    motor_type: flight.motorType ?? '',
+    total_weight_g: flight.totalWeightG != null ? flight.totalWeightG : '',
+    recovery_system: flight.recoverySystem ?? '',
+    recovery_size: flight.recoverySize ?? '',
+    deployment_method: flight.deploymentMethod ?? '',
+    main_deploy_altitude: flight.mainDeployAltitude ?? '',
+    pad_number: flight.padNumber ?? '',
+    soft_gate_warnings: flight.softGateWarnings ? JSON.stringify(flight.softGateWarnings) : '[]',
+    proceeded_despite_warnings: Boolean(flight.proceededDespiteWarnings),
+  }
+
+  const content = preflightFormView({
+    rockets,
+    configurations,
+    motors,
+    inventories,
+    launchSites,
+    launchEvents,
+    users,
+    flyerCertLevel: activeFlyer.maxCertLevel,
+    initialValues,
+    warnings: (flight.softGateWarnings as string[] | null) || [],
+    isEdit: true,
+    flightId: flight.id,
+  })
+
+  const fullHtml = pageLayout({
+    title: `Edit Flight #${flight.flightNumber || 1}`,
+    activeTab: 'flights',
+    content,
+    user: activeFlyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})
+
+/**
+ * Helper to handle updating an existing flight record.
+ */
+async function handleUpdateFlight(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flightId = c.req.param('id')
+  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const [existing] = await db
+    .select()
+    .from(schema.flights)
+    .where(eq(schema.flights.id, flightId))
+
+  if (!existing) {
+    if (c.req.header('accept')?.includes('application/json')) {
+      return c.json({ error: 'Flight not found' }, 404)
+    }
+    const errorHtml = pageLayout({
+      title: 'Flight Not Found',
+      activeTab: 'flights',
+      content: preflightWarningFragment(['The requested flight log does not exist or has been removed.']),
+      user: activeFlyer,
+    })
+    return c.html(errorHtml, 404, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const contentType = c.req.header('content-type') || ''
+  let body: Record<string, any> = {}
+  if (contentType.includes('application/json')) {
+    body = await c.req.json().catch(() => ({}))
+  } else {
+    body = await c.req.parseBody().catch(() => ({}))
+  }
+
+  const rocketConfigId =
+    body['rocket_configuration_id'] !== undefined
+      ? (body['rocket_configuration_id'] ? String(body['rocket_configuration_id']).trim() : null)
+      : existing.rocketConfigurationId
+
+  const motorId =
+    body['motor_id'] !== undefined
+      ? (body['motor_id'] ? String(body['motor_id']).trim() : null)
+      : existing.motorId
+
+  let motorInventoryId =
+    body['motor_inventory_id'] !== undefined
+      ? (body['motor_inventory_id'] ? String(body['motor_inventory_id']).trim() : null)
+      : existing.motorInventoryId
+
+  // Auto-link inventory if motor_inventory_id was not provided but motor_id has stock
+  if (!motorInventoryId && motorId) {
+    const [availableInv] = await db
+      .select({ id: schema.motorInventories.id, quantityOnHand: schema.motorInventories.quantityOnHand })
+      .from(schema.motorInventories)
+      .where(
+        and(
+          eq(schema.motorInventories.userId, existing.flyerId),
+          eq(schema.motorInventories.motorId, motorId),
+          gt(schema.motorInventories.quantityOnHand, 0),
+        ),
+      )
+      .limit(1)
+
+    if (availableInv) {
+      motorInventoryId = availableInv.id
+    }
+  }
+
+  const logType =
+    body['log_type'] !== undefined
+      ? (body['log_type'] === 'preflight' ? 'preflight' : 'actual')
+      : existing.logType
+
+  const launchSiteId =
+    body['launch_site_id'] !== undefined
+      ? (body['launch_site_id'] ? String(body['launch_site_id']).trim() : null)
+      : existing.launchSiteId
+
+  const launchEventId =
+    body['launch_event_id'] !== undefined
+      ? (body['launch_event_id'] ? String(body['launch_event_id']).trim() : null)
+      : existing.launchEventId
+
+  const flightNumber =
+    body['flight_number'] !== undefined
+      ? (body['flight_number'] !== '' && !isNaN(Number(body['flight_number'])) ? parseInt(String(body['flight_number']), 10) : null)
+      : existing.flightNumber
+
+  let flownAt = existing.flownAt
+  if (body['flown_at'] !== undefined) {
+    const pNum = Number(body['flown_at'])
+    if (!isNaN(pNum) && pNum > 0) {
+      flownAt = pNum
+    } else {
+      const pDate = new Date(String(body['flown_at'])).getTime()
+      if (!isNaN(pDate)) flownAt = pDate
+    }
+  }
+
+  let altitudeAglM: number | null = existing.altitudeAglM
+  if (body['altitude_agl_m'] !== undefined && body['altitude_agl_m'] !== '') {
+    if (!isNaN(Number(body['altitude_agl_m']))) {
+      altitudeAglM = Number(body['altitude_agl_m'])
+    }
+  } else if (body['altitude_agl_ft'] !== undefined && body['altitude_agl_ft'] !== '') {
+    if (!isNaN(Number(body['altitude_agl_ft']))) {
+      altitudeAglM = Number((Number(body['altitude_agl_ft']) * 0.3048).toFixed(2))
+    }
+  } else if (body['altitude_agl_m'] === '') {
+    altitudeAglM = null
+  }
+
+  const altitudeMslM =
+    body['altitude_msl_m'] !== undefined
+      ? (body['altitude_msl_m'] !== '' && !isNaN(Number(body['altitude_msl_m'])) ? Number(body['altitude_msl_m']) : null)
+      : existing.altitudeMslM
+
+  const maxVelocityMps =
+    body['max_velocity_mps'] !== undefined
+      ? (body['max_velocity_mps'] !== '' && !isNaN(Number(body['max_velocity_mps'])) ? Number(body['max_velocity_mps']) : null)
+      : existing.maxVelocityMps
+
+  const maxAccelG =
+    body['max_accel_g'] !== undefined
+      ? (body['max_accel_g'] !== '' && !isNaN(Number(body['max_accel_g'])) ? Number(body['max_accel_g']) : null)
+      : existing.maxAccelG
+
+  const windMps =
+    body['wind_mps'] !== undefined
+      ? (body['wind_mps'] !== '' && !isNaN(Number(body['wind_mps'])) ? Number(body['wind_mps']) : null)
+      : existing.windMps
+
+  const windDirDeg =
+    body['wind_dir_deg'] !== undefined
+      ? (body['wind_dir_deg'] !== '' && !isNaN(Number(body['wind_dir_deg'])) ? Number(body['wind_dir_deg']) : null)
+      : existing.windDirDeg
+
+  const temperatureC =
+    body['temperature_c'] !== undefined
+      ? (body['temperature_c'] !== '' && !isNaN(Number(body['temperature_c'])) ? Number(body['temperature_c']) : null)
+      : existing.temperatureC
+
+  const visibilityM =
+    body['visibility_m'] !== undefined
+      ? (body['visibility_m'] !== '' && !isNaN(Number(body['visibility_m'])) ? Number(body['visibility_m']) : null)
+      : existing.visibilityM
+
+  const ceilingM =
+    body['ceiling_m'] !== undefined
+      ? (body['ceiling_m'] !== '' && !isNaN(Number(body['ceiling_m'])) ? Number(body['ceiling_m']) : null)
+      : existing.ceilingM
+
+  const outcome =
+    body['outcome'] !== undefined
+      ? (String(body['outcome']) as any)
+      : existing.outcome
+
+  const notes =
+    body['notes'] !== undefined
+      ? (body['notes'] ? String(body['notes']) : null)
+      : existing.notes
+
+  const rsoNameRaw =
+    body['rso_name'] !== undefined
+      ? (body['rso_name'] ? String(body['rso_name']).trim() : null)
+      : existing.rsoName
+
+  const lcoNameRaw =
+    body['lco_name'] !== undefined
+      ? (body['lco_name'] ? String(body['lco_name']).trim() : null)
+      : existing.lcoName
+
+  const rsoUserIdRaw =
+    body['rso_user_id'] !== undefined
+      ? (body['rso_user_id'] ? String(body['rso_user_id']).trim() : null)
+      : existing.rsoUserId
+
+  const lcoUserIdRaw =
+    body['lco_user_id'] !== undefined
+      ? (body['lco_user_id'] ? String(body['lco_user_id']).trim() : null)
+      : existing.lcoUserId
+
+  let sanitizedRsoUserId: string | null = null
+  let sanitizedLcoUserId: string | null = null
+
+  const candidateOfficerIds = [rsoUserIdRaw, lcoUserIdRaw].filter(
+    (id): id is string => typeof id === 'string' && id.length > 0,
+  )
+
+  const validUserMap = new Map<string, string>()
+  if (candidateOfficerIds.length > 0) {
+    const matchingUsers = await db
+      .select({ id: schema.users.id, displayName: schema.users.displayName })
+      .from(schema.users)
+      .where(inArray(schema.users.id, candidateOfficerIds))
+
+    for (const u of matchingUsers) {
+      validUserMap.set(u.id, u.displayName)
+    }
+
+    if (rsoUserIdRaw && validUserMap.has(rsoUserIdRaw)) {
+      sanitizedRsoUserId = rsoUserIdRaw
+    }
+    if (lcoUserIdRaw && validUserMap.has(lcoUserIdRaw)) {
+      sanitizedLcoUserId = lcoUserIdRaw
+    }
+  }
+
+  const rsoName =
+    rsoNameRaw && rsoNameRaw.length > 0
+      ? rsoNameRaw
+      : sanitizedRsoUserId
+        ? validUserMap.get(sanitizedRsoUserId) ?? null
+        : null
+
+  const lcoName =
+    lcoNameRaw && lcoNameRaw.length > 0
+      ? lcoNameRaw
+      : sanitizedLcoUserId
+        ? validUserMap.get(sanitizedLcoUserId) ?? null
+        : null
+
+  const isFirstFlight =
+    body['is_first_flight'] !== undefined
+      ? (body['is_first_flight'] === 'true' || body['is_first_flight'] === '1' || body['is_first_flight'] === 'on' || body['is_first_flight'] === true)
+      : existing.isFirstFlight
+
+  const certAttempt =
+    body['cert_attempt'] !== undefined
+      ? (body['cert_attempt'] ? (String(body['cert_attempt']).trim().toLowerCase() as any) : 'none')
+      : existing.certAttempt
+
+  const buildType =
+    body['build_type'] !== undefined
+      ? (body['build_type'] ? (String(body['build_type']).trim() as any) : null)
+      : existing.buildType
+
+  const stabilityCheckMethod =
+    body['stability_check_method'] !== undefined
+      ? (body['stability_check_method'] ? String(body['stability_check_method']).trim() : null)
+      : existing.stabilityCheckMethod
+
+  const stabilityMargin =
+    body['stability_margin'] !== undefined
+      ? (body['stability_margin'] !== '' && !isNaN(Number(body['stability_margin'])) ? Number(body['stability_margin']) : null)
+      : existing.stabilityMargin
+
+  const motorType =
+    body['motor_type'] !== undefined
+      ? (body['motor_type'] ? String(body['motor_type']).trim() : null)
+      : existing.motorType
+
+  const totalWeightG =
+    body['total_weight_g'] !== undefined
+      ? (body['total_weight_g'] !== '' && !isNaN(Number(body['total_weight_g'])) ? Number(body['total_weight_g']) : null)
+      : existing.totalWeightG
+
+  const recoverySystem =
+    body['recovery_system'] !== undefined
+      ? (body['recovery_system'] ? (String(body['recovery_system']).trim() as any) : null)
+      : existing.recoverySystem
+
+  const recoverySize =
+    body['recovery_size'] !== undefined
+      ? (body['recovery_size'] ? String(body['recovery_size']).trim() : null)
+      : existing.recoverySize
+
+  const deploymentMethod =
+    body['deployment_method'] !== undefined
+      ? (body['deployment_method'] ? (String(body['deployment_method']).trim() as any) : null)
+      : existing.deploymentMethod
+
+  const mainDeployAltitude =
+    body['main_deploy_altitude'] !== undefined
+      ? (body['main_deploy_altitude'] ? String(body['main_deploy_altitude']).trim() : null)
+      : existing.mainDeployAltitude
+
+  const padNumber =
+    body['pad_number'] !== undefined
+      ? (body['pad_number'] ? String(body['pad_number']).trim() : null)
+      : existing.padNumber
+
+  const [updatedFlight] = await db
+    .update(schema.flights)
+    .set({
+      rocketConfigurationId: rocketConfigId,
+      motorId,
+      motorInventoryId,
+      launchSiteId,
+      launchEventId,
+      flightNumber,
+      flownAt,
+      logType,
+      altitudeAglM,
+      altitudeMslM,
+      maxVelocityMps,
+      maxAccelG,
+      windMps,
+      windDirDeg,
+      temperatureC,
+      visibilityM,
+      ceilingM,
+      outcome,
+      notes,
+      rsoName: rsoName || null,
+      lcoName: lcoName || null,
+      rsoUserId: sanitizedRsoUserId,
+      lcoUserId: sanitizedLcoUserId,
+      isFirstFlight,
+      certAttempt,
+      buildType,
+      stabilityCheckMethod,
+      stabilityMargin,
+      motorType,
+      totalWeightG,
+      recoverySystem,
+      recoverySize,
+      deploymentMethod,
+      mainDeployAltitude,
+      padNumber,
+      updatedAt: Date.now(),
+    })
+    .where(eq(schema.flights.id, flightId))
+    .returning()
+
+  if (c.req.header('accept')?.includes('application/json')) {
+    return c.json(updatedFlight, 200)
+  }
+  return c.redirect(`/flights/${updatedFlight.id}`, 303)
+}
+
+flightsRouter.post('/:id/edit', handleUpdateFlight)
+flightsRouter.post('/:id', handleUpdateFlight)
+
+/**
+ * GET /flights/:id — Flight Detail View
+ */
+flightsRouter.get('/:id', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const flightId = c.req.param('id')
+
+  const [flight] = await db
+    .select()
+    .from(schema.flights)
+    .where(eq(schema.flights.id, flightId))
+
+  if (!flight) {
+    const errorHtml = pageLayout({
+      title: 'Flight Not Found',
+      activeTab: 'flights',
+      content: preflightWarningFragment(['The requested flight log does not exist or has been removed.']),
+    })
+    return c.html(errorHtml, 404, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
+  const [flyer, config, motor, site, event, rsoUser, lcoUser] = await Promise.all([
+    flight.flyerId
+      ? db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.id, flight.flyerId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.rocketConfigurationId
+      ? db
+          .select()
+          .from(schema.rocketConfigurations)
+          .where(eq(schema.rocketConfigurations.id, flight.rocketConfigurationId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.motorId
+      ? db
+          .select()
+          .from(schema.motors)
+          .where(eq(schema.motors.id, flight.motorId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.launchSiteId
+      ? db
+          .select()
+          .from(schema.launchSites)
+          .where(eq(schema.launchSites.id, flight.launchSiteId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.launchEventId
+      ? db
+          .select()
+          .from(schema.launchEvents)
+          .where(eq(schema.launchEvents.id, flight.launchEventId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.rsoUserId
+      ? db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.id, flight.rsoUserId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    flight.lcoUserId
+      ? db
+          .select({
+            id: schema.users.id,
+            displayName: schema.users.displayName,
+            email: schema.users.email,
+          })
+          .from(schema.users)
+          .where(eq(schema.users.id, flight.lcoUserId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+  ])
+
+  let rocket: {
+    id: string
+    name: string
+    status: string | null
+    lengthMm?: number | null
+    bodyDiameterMm?: number | null
+  } | null = null
+  if (config?.rocketId) {
+    const [r] = await db
+      .select({
+        id: schema.rockets.id,
+        name: schema.rockets.name,
+        status: schema.rockets.status,
+        lengthMm: schema.rockets.lengthMm,
+        bodyDiameterMm: schema.rockets.bodyDiameterMm,
+      })
+      .from(schema.rockets)
+      .where(eq(schema.rockets.id, config.rocketId))
+    rocket = r ?? null
+  }
+
+  const unitsQuery = c.req.query('units')?.toLowerCase()
+  const unitSystem: 'imperial' | 'metric' = unitsQuery === 'ft' || unitsQuery === 'feet' ? 'imperial' : 'metric'
+  const units = unitSystem === 'imperial' ? 'ft' : 'm'
+
+  const content = flightDetailView({
+    flight: {
+      ...flight,
+      softGateWarnings: (flight.softGateWarnings as string[] | null) || [],
+      proceededDespiteWarnings: Boolean(flight.proceededDespiteWarnings),
+    },
+    config,
+    rocket,
+    motor,
+    site,
+    event,
+    flyer,
+    rsoUser,
+    lcoUser,
+    units,
+    unitSystem,
+  })
+
+  const title = rocket ? `${rocket.name} — Flight #${flight.flightNumber || 1}` : 'Flight Details'
+  const fullHtml = pageLayout({
+    title,
+    activeTab: 'flights',
+    content,
+    user: (c.get as any)('user') || flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})

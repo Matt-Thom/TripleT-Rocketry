@@ -1,0 +1,66 @@
+/**
+ * Cloudflare Worker configuration.
+ *
+ * Two deploy targets, driven by git branch (see .github/workflows/deploy.yml):
+ *
+ *   main    -> top-level config      -> Worker "triplet-rocketry"          (production)
+ *   develop -> the "staging" env     -> Worker "triplet-rocketry-staging"  (staging)
+ *
+ * Each target has its OWN D1 database. They share no data, so a staging
+ * migration can never touch production rows.
+ *
+ * Before the first deploy, create both databases and paste their ids in:
+ *   npx wrangler d1 create triplet-rocketry
+ *   npx wrangler d1 create triplet-rocketry-staging
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "triplet-rocketry",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    "ENVIRONMENT": "production",
+    "PROJECT_ID": "PROJ-075AA139"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "triplet-rocketry",
+      "database_id": "6590bf9c-a4fc-4e60-a4a3-cfe918e5a965",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Requires the thom.au zone to be on this Cloudflare account. Wrangler
+  // creates the DNS record and the certificate on first deploy.
+  "routes": [{ "pattern": "rocketry.thom.au", "custom_domain": true }],
+
+  "env": {
+    "staging": {
+      "name": "triplet-rocketry-staging",
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PROJECT_ID": "PROJ-075AA139"
+      },
+      "observability": {
+        "enabled": true
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "triplet-rocketry-staging",
+          "database_id": "1e4b6898-722a-4ef3-8457-5d62a1ba44fa",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "routes": [{ "pattern": "rocketry-dev.thom.au", "custom_domain": true }]
+    }
+  }
+}

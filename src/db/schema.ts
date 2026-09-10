@@ -1,0 +1,595 @@
+/**
+ * Drizzle schema for D1 (SQLite) — the Phase 1 (WP0) entity graph.
+ *
+ * Ported from the SQLAlchemy/PostgreSQL models under `app/models/`. Type
+ * mapping decisions, made once here so the migrations stay mechanical:
+ *
+ *   uuid            -> text primary key, generated with crypto.randomUUID()
+ *   timestamptz     -> integer (unix ms). SQLite has no native timestamp type;
+ *                      ms-since-epoch sorts correctly and round-trips to Date.
+ *   date            -> text, ISO-8601 'YYYY-MM-DD'. Date-only values must not
+ *                      acquire a timezone, so they stay text rather than epoch.
+ *   float/double    -> real
+ *   boolean         -> integer 0/1
+ *   jsonb           -> text, JSON-encoded (see `mode: 'json'`)
+ *   native enum     -> text + a CHECK constraint in the migration. SQLite has
+ *                      no enum type; the `enum:` option below is TypeScript-side
+ *                      only, so the CHECK is what actually enforces the domain.
+ *
+ * See: wiki/concepts/phase1-implementation-plan.md
+ */
+
+import { sql } from 'drizzle-orm'
+import {
+  check,
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core'
+import type { SQLiteColumn } from 'drizzle-orm/sqlite-core'
+
+// --- Domain enumerations (mirror app/models/enums.py) ----------------------
+
+export const CERTIFYING_BODY = ['NAR', 'TRA', 'ARA'] as const
+export const CERT_LEVEL = [0, 1, 2, 3] as const
+export const IMPULSE_CLASS = [
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+  'I', 'J', 'K', 'L', 'M', 'N', 'O',
+] as const
+export const PROPELLANT_TYPE = ['black_powder', 'apcp', 'hybrid', 'other'] as const
+export const CERTIFYING_ORG = ['NAR', 'TRA', 'BOTH', 'NONE'] as const
+export const ROCKET_STATUS = ['flight_ready', 'in_build', 'damaged', 'retired'] as const
+export const RECOVERY_TYPE = [
+  'parachute', 'streamer', 'dual_deploy', 'tumble', 'other',
+] as const
+// Expanded Flight Outcomes (legacy + Tripoli/SARC club outcomes)
+export const FLIGHT_OUTCOME = [
+  'successful',
+  'cato',
+  'separation',
+  'recovery_failure',
+  'tree',
+  'powerline',
+  'lost',
+  'other',
+  'GOOD',
+  'CATO',
+  'Shred',
+  'Unstable',
+  'Zipper',
+  'Separation',
+  'No chute',
+  'Tangled',
+  'Lawn Dart',
+  'Retention fail',
+  'No ignition',
+] as const
+export type FlightOutcome = (typeof FLIGHT_OUTCOME)[number]
+
+export const FLIGHT_LOG_TYPE = ['preflight', 'actual'] as const;
+export type FlightLogType = (typeof FLIGHT_LOG_TYPE)[number];
+
+// Flight Card Domain Enumerations (Tripoli/SARC Specification)
+export const CERT_ATTEMPT = ['none', 'mpr', 'l1', 'l2', 'l3'] as const
+export type CertAttempt = (typeof CERT_ATTEMPT)[number]
+
+export const BUILD_TYPE = ['rtf', 'kit', 'modified', 'scratch_built'] as const
+export type BuildType = (typeof BUILD_TYPE)[number]
+
+export const RECOVERY_SYSTEM = ['Chute(s)', 'Streamer', 'Tumble', 'Other'] as const
+export type RecoverySystem = (typeof RECOVERY_SYSTEM)[number]
+
+export const DEPLOYMENT_METHOD = [
+  'Motor eject',
+  'Chute Release',
+  'Electronic deploy',
+] as const
+export type DeploymentMethod = (typeof DEPLOYMENT_METHOD)[number]
+
+export const MOTOR_COMPOSITION_TYPE = [
+  'Black Powder',
+  'Composite',
+  'Hybrid',
+  'Cluster',
+  'Staged',
+  'Sparky',
+] as const
+export type MotorCompositionType = (typeof MOTOR_COMPOSITION_TYPE)[number]
+
+export const COMPONENT_CATEGORY = [
+  'motor', 'casing', 'recovery', 'avionics',
+  'pyrotechnic', 'airframe', 'hardware', 'payload', 'other',
+] as const
+
+export const COMPONENT_CONDITION = [
+  'new', 'good', 'fair', 'damaged', 'quarantined', 'retired',
+] as const
+
+export const TRANSACTION_TYPE = [
+  'purchased', 'received', 'used', 'sold',
+  'transferred_in', 'transferred_out', 'disposed', 'destroyed',
+  'lost', 'stolen', 'quarantined', 'returned',
+  'loaned_out', 'borrowed', 'audit_adjustment',
+] as const
+
+export const USER_ROLE = ['admin', 'flyer'] as const
+export const REGULATORY_REGION = ['SA', 'US'] as const
+
+// --- Shared column builders ------------------------------------------------
+
+const uuidPk = () =>
+  text('id').primaryKey().$defaultFn(() => crypto.randomUUID())
+
+const nowMs = sql`(unixepoch('subsec') * 1000)`
+
+/**
+ * The audit columns every Phase 1 entity carries (app/models/base.py).
+ *
+ * `updated_at` is refreshed by Drizzle's `$onUpdate`, not by a SQLite trigger:
+ * a trigger would also fire for D1 migrations and backfills, which should not
+ * count as user edits.
+ */
+const auditColumns = {
+  createdAt: integer('created_at').notNull().default(nowMs),
+  updatedAt: integer('updated_at')
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => Date.now()),
+  createdBy: text('created_by'),
+  deletedAt: integer('deleted_at'),
+}
+
+/**
+ * A CHECK constraint standing in for a PostgreSQL native enum.
+ *
+ * Drizzle's `enum:` option is erased at runtime, so without this the column
+ * would accept any string. Nullable columns must still admit NULL, hence the
+ * explicit `IS NULL` branch.
+ *
+ * The predicate is built with `sql.raw` rather than interpolation because
+ * drizzle-kit renders interpolated values as `?` bind placeholders, and SQLite
+ * rejects parameters inside a CHECK constraint. Both the column names and the
+ * value lists are compile-time constants declared in this file, so there is no
+ * untrusted input to escape here.
+ */
+const literalList = (values: readonly (string | number)[]) =>
+  values.map((v) => (typeof v === 'number' ? String(v) : `'${v}'`)).join(', ')
+
+const enumCheck = (
+  name: string,
+  column: SQLiteColumn,
+  values: readonly (string | number)[],
+) =>
+  check(
+    name,
+    sql.raw(
+      `"${column.name}" IS NULL OR "${column.name}" IN (${literalList(values)})`,
+    ),
+  )
+
+// --- Entities --------------------------------------------------------------
+
+export const users = sqliteTable(
+  'users',
+  {
+    id: uuidPk(),
+    email: text('email').notNull(),
+    displayName: text('display_name').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    role: text('role', { enum: USER_ROLE }).notNull().default('flyer'),
+    regulatoryRegion: text('regulatory_region').notNull().default('SA'),
+    isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+    createdAt: integer('created_at').notNull().default(nowMs),
+    updatedAt: integer('updated_at')
+      .notNull()
+      .default(nowMs)
+      .$onUpdate(() => Date.now()),
+  },
+  (t) => [
+    uniqueIndex('uq_users_email').on(t.email),
+  ],
+)
+
+export const certifications = sqliteTable(
+  'certifications',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    certifyingBody: text('certifying_body', { enum: CERTIFYING_BODY }).notNull(),
+    level: integer('level').notNull(),
+    certNumber: text('cert_number'),
+    expiresOn: text('expires_on'),
+    verifiedAt: integer('verified_at'),
+    overrideReason: text('override_reason'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_certifications_user_id').on(t.userId),
+    enumCheck('ck_certifications_certifying_body', t.certifyingBody, CERTIFYING_BODY),
+    enumCheck('ck_certifications_level', t.level, CERT_LEVEL),
+  ],
+)
+
+export const rockets = sqliteTable(
+  'rockets',
+  {
+    id: uuidPk(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    status: text('status', { enum: ROCKET_STATUS }).notNull().default('in_build'),
+    lengthMm: real('length_mm'),
+    bodyDiameterMm: real('body_diameter_mm'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_rockets_owner_id').on(t.ownerId),
+    enumCheck('ck_rockets_status', t.status, ROCKET_STATUS),
+  ],
+)
+
+export const rocketConfigurations = sqliteTable(
+  'rocket_configurations',
+  {
+    id: uuidPk(),
+    rocketId: text('rocket_id')
+      .notNull()
+      .references(() => rockets.id),
+    version: integer('version').notNull(),
+    airframeMaterial: text('airframe_material'),
+    finCount: integer('fin_count'),
+    dryMassG: real('dry_mass_g'),
+    loadedMassG: real('loaded_mass_g'),
+    ballastG: real('ballast_g'),
+    cgMm: real('cg_mm'),
+    cpMm: real('cp_mm'),
+    stabilityCalibers: real('stability_calibers'),
+    recoveryType: text('recovery_type', { enum: RECOVERY_TYPE }),
+    parachuteSizeMm: real('parachute_size_mm'),
+    drogueParachuteSizeMm: real('drogue_parachute_size_mm'),
+    motorMountDiameterMm: real('motor_mount_diameter_mm'),
+    lengthMm: real('length_mm'),
+    bodyDiameterMm: real('body_diameter_mm'),
+    notes: text('notes'),
+    isCurrent: integer('is_current', { mode: 'boolean' }).notNull().default(true),
+    ...auditColumns,
+  },
+  (t) => [
+    uniqueIndex('uq_rocket_configurations_rocket_version').on(t.rocketId, t.version),
+    enumCheck('ck_rocket_configurations_recovery_type', t.recoveryType, RECOVERY_TYPE),
+  ],
+)
+
+export const motors = sqliteTable(
+  'motors',
+  {
+    id: uuidPk(),
+    manufacturer: text('manufacturer').notNull(),
+    model: text('model').notNull(),
+    impulseClass: text('impulse_class', { enum: IMPULSE_CLASS }),
+    totalImpulseNs: real('total_impulse_ns'),
+    averageThrustN: real('average_thrust_n'),
+    maxThrustN: real('max_thrust_n'),
+    burnTimeS: real('burn_time_s'),
+    delayS: real('delay_s'),
+    propellantType: text('propellant_type', { enum: PROPELLANT_TYPE }),
+    diameterMm: real('diameter_mm'),
+    lengthMm: real('length_mm'),
+    casingReusable: integer('casing_reusable', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    certNumber: text('cert_number'),
+    certifyingOrg: text('certifying_org', { enum: CERTIFYING_ORG }),
+    weightG: real('weight_g'),
+    partNumber: text('part_number'),
+    hardware: text('hardware'),
+    grains: integer('grains'),
+    propellantWeightG: real('propellant_weight_g'),
+    grainWeightG: real('grain_weight_g'),
+    unNumber: text('un_number'),
+    hazardClassification: text('hazard_classification'),
+    uspsMailable: integer('usps_mailable', { mode: 'boolean' }).default(false),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [
+    uniqueIndex('uq_motors_manufacturer_model_delay').on(
+      t.manufacturer,
+      t.model,
+      t.delayS,
+    ),
+    enumCheck('ck_motors_impulse_class', t.impulseClass, IMPULSE_CLASS),
+    enumCheck('ck_motors_propellant_type', t.propellantType, PROPELLANT_TYPE),
+    enumCheck('ck_motors_certifying_org', t.certifyingOrg, CERTIFYING_ORG),
+  ],
+)
+
+export const motorInventories = sqliteTable(
+  'motor_inventories',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    motorId: text('motor_id')
+      .notNull()
+      .references(() => motors.id),
+    quantityOnHand: integer('quantity_on_hand').notNull().default(0),
+    expendedCount: integer('expended_count').notNull().default(0),
+    soldCount: integer('sold_count').notNull().default(0),
+    disposedCount: integer('disposed_count').notNull().default(0),
+    acquiredOn: text('acquired_on'),
+    purchasedOn: text('purchased_on'),
+    receivedOn: text('received_on'),
+    batchLotNumber: text('batch_lot_number'),
+    serialNumber: text('serial_number'),
+    storageLocation: text('storage_location'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_motor_inventories_user_id').on(t.userId),
+    index('ix_motor_inventories_motor_id').on(t.motorId),
+  ],
+)
+
+export const components = sqliteTable(
+  'components',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    category: text('category', { enum: COMPONENT_CATEGORY }).notNull(),
+    motorId: text('motor_id').references(() => motors.id),
+    manufacturer: text('manufacturer'),
+    partNumber: text('part_number'),
+    serialNumber: text('serial_number'),
+    lotNumber: text('lot_number'),
+    quantityOnHand: integer('quantity_on_hand').notNull().default(0),
+    quantityAllocated: integer('quantity_allocated').notNull().default(0),
+    quantityExpended: integer('quantity_expended').notNull().default(0),
+    quantityDisposed: integer('quantity_disposed').notNull().default(0),
+    unit: text('unit').notNull().default('ea'),
+    condition: text('condition', { enum: COMPONENT_CONDITION }).notNull().default('new'),
+    storageLocation: text('storage_location'),
+    hazardClass: text('hazard_class'),
+    propellantMassG: real('propellant_mass_g'),
+    acquiredOn: text('acquired_on'),
+    purchasedOn: text('purchased_on'),
+    receivedOn: text('received_on'),
+    costCents: integer('cost_cents'),
+    vendor: text('vendor'),
+    expirationDate: text('expiration_date'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_components_user_id').on(t.userId),
+    index('ix_components_category').on(t.category),
+    enumCheck('ck_components_category', t.category, COMPONENT_CATEGORY),
+    enumCheck('ck_components_condition', t.condition, COMPONENT_CONDITION),
+  ],
+)
+
+export const launchSites = sqliteTable('launch_sites', {
+  id: uuidPk(),
+  name: text('name').notNull(),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  maxAltitudeAglM: real('max_altitude_agl_m'),
+  notes: text('notes'),
+  ...auditColumns,
+})
+
+export const launchEvents = sqliteTable(
+  'launch_events',
+  {
+    id: uuidPk(),
+    launchSiteId: text('launch_site_id')
+      .notNull()
+      .references(() => launchSites.id),
+    name: text('name').notNull(),
+    startsOn: text('starts_on'),
+    endsOn: text('ends_on'),
+    rsoUserId: text('rso_user_id').references(() => users.id),
+    lcoUserId: text('lco_user_id').references(() => users.id),
+    launchDirector: text('launch_director'),
+    tripoliPrefect: text('tripoli_prefect'),
+    rsoName: text('rso_name'),
+    lcoName: text('lco_name'),
+    weatherNotes: text('weather_notes'),
+    padCount: integer('pad_count'),
+    ...auditColumns,
+  },
+  (t) => [index('ix_launch_events_launch_site_id').on(t.launchSiteId)],
+)
+
+export const flights = sqliteTable(
+  'flights',
+  {
+    id: uuidPk(),
+    flyerId: text('flyer_id')
+      .notNull()
+      .references(() => users.id),
+    rocketConfigurationId: text('rocket_configuration_id').references(
+      () => rocketConfigurations.id,
+    ),
+    motorId: text('motor_id').references(() => motors.id),
+    motorInventoryId: text('motor_inventory_id').references(() => motorInventories.id),
+    launchSiteId: text('launch_site_id').references(() => launchSites.id),
+    launchEventId: text('launch_event_id').references(() => launchEvents.id),
+    flightNumber: integer('flight_number'),
+    flownAt: integer('flown_at'),
+    logType: text('log_type').notNull().default('actual'),
+    altitudeAglM: real('altitude_agl_m'),
+    altitudeMslM: real('altitude_msl_m'),
+    maxVelocityMps: real('max_velocity_mps'),
+    maxAccelG: real('max_accel_g'),
+    windMps: real('wind_mps'),
+    windDirDeg: real('wind_dir_deg'),
+    temperatureC: real('temperature_c'),
+    visibilityM: real('visibility_m'),
+    ceilingM: real('ceiling_m'),
+    outcome: text('outcome', { enum: FLIGHT_OUTCOME }),
+    notes: text('notes'),
+    mediaUrls: text('media_urls', { mode: 'json' }).$type<string[]>(),
+    softGateWarnings: text('soft_gate_warnings', { mode: 'json' }).$type<string[]>(),
+    proceededDespiteWarnings: integer('proceeded_despite_warnings', {
+      mode: 'boolean',
+    })
+      .notNull()
+      .default(false),
+    rsoUserId: text('rso_user_id').references(() => users.id),
+    lcoUserId: text('lco_user_id').references(() => users.id),
+    rsoName: text('rso_name'),
+    lcoName: text('lco_name'),
+
+    // --- Flight Card Specifications (Requirement R1) --------------------------
+    isFirstFlight: integer('is_first_flight', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    certAttempt: text('cert_attempt', { enum: CERT_ATTEMPT })
+      .notNull()
+      .default('none'),
+    buildType: text('build_type', { enum: BUILD_TYPE }),
+    stabilityCheckMethod: text('stability_check_method'),
+    stabilityMargin: real('stability_margin'),
+    motorType: text('motor_type'),
+    totalWeightG: real('total_weight_g'),
+    recoverySystem: text('recovery_system', { enum: RECOVERY_SYSTEM }),
+    recoverySize: text('recovery_size'),
+    deploymentMethod: text('deployment_method', { enum: DEPLOYMENT_METHOD }),
+    mainDeployAltitude: text('main_deploy_altitude'),
+    padNumber: text('pad_number'),
+
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_flights_flyer_id').on(t.flyerId),
+    index('ix_flights_flown_at').on(t.flownAt),
+    enumCheck('ck_flights_outcome', t.outcome, FLIGHT_OUTCOME),
+  ],
+)
+
+export const inventoryTransactions = sqliteTable(
+  'inventory_transactions',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    motorInventoryId: text('motor_inventory_id').references(() => motorInventories.id),
+    componentId: text('component_id').references(() => components.id),
+    transactionType: text('transaction_type', { enum: TRANSACTION_TYPE }).notNull(),
+    quantity: integer('quantity').notNull().default(1),
+    transactionDate: text('transaction_date').notNull(),
+    counterpartyName: text('counterparty_name'),
+    counterpartyCertNumber: text('counterparty_cert_number'),
+    counterpartyLicense: text('counterparty_license'),
+    counterpartyContact: text('counterparty_contact'),
+    referenceId: text('reference_id'),
+    flightId: text('flight_id').references(() => flights.id),
+    batchLotNumber: text('batch_lot_number'),
+    serialNumbers: text('serial_numbers'),
+    storageLocation: text('storage_location'),
+    unitCost: real('unit_cost'),
+    witnessName: text('witness_name'),
+    complianceNotes: text('compliance_notes'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [
+    index('ix_inventory_transactions_user_id').on(t.userId),
+    index('ix_inventory_transactions_motor_inv_id').on(t.motorInventoryId),
+    index('ix_inventory_transactions_component_id').on(t.componentId),
+    index('ix_inventory_transactions_type').on(t.transactionType),
+    enumCheck('ck_inventory_transactions_type', t.transactionType, TRANSACTION_TYPE),
+  ],
+)
+
+export const siteSettings = sqliteTable('site_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  createdAt: integer('created_at').notNull().default(nowMs),
+  updatedAt: integer('updated_at')
+    .notNull()
+    .default(nowMs)
+    .$onUpdate(() => Date.now()),
+})
+
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: integer('created_at').notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('uq_sessions_token').on(t.token),
+    index('ix_sessions_user_id').on(t.userId),
+  ],
+)
+
+export const userCredentials = sqliteTable(
+  'user_credentials',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicKey: text('public_key').notNull(),
+    counter: integer('counter').notNull().default(0),
+    deviceType: text('device_type'),
+    backedUp: integer('backed_up', { mode: 'boolean' }).notNull().default(false),
+    transports: text('transports'),
+    friendlyName: text('friendly_name'),
+    createdAt: integer('created_at').notNull().default(nowMs),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('ix_user_credentials_user_id').on(t.userId)],
+)
+
+export const storageSites = sqliteTable(
+  'storage_sites',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    location: text('location'),
+    capacityKg: real('capacity_kg').notNull().default(0),
+    permitNumber: text('permit_number'),
+    notes: text('notes'),
+    ...auditColumns,
+  },
+  (t) => [index('ix_storage_sites_user_id').on(t.userId)],
+)
+
+export const clubMemberships = sqliteTable(
+  'club_memberships',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    clubName: text('club_name').notNull(),
+    membershipNumber: text('membership_number'),
+    expiresOn: text('expires_on'),
+    ...auditColumns,
+  },
+  (t) => [index('ix_club_memberships_user_id').on(t.userId)],
+)
+

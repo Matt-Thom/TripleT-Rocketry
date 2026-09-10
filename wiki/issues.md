@@ -715,3 +715,58 @@ Quality findings and blocked-sync notices.
 - queries/dlg-c8e28f260484.md: stale — last updated 2026-07-20
 - queries/dlg-fea38264f0f6.md: stale — last updated 2026-07-20
 - schema.md: stale — last updated 2026-07-19
+
+## 2026-09-03 — Port to Cloudflare Workers
+
+- `wiki/concepts/phase1-implementation-plan.md` is cited by every module
+  docstring in `app/` and `src/` but **does not exist**. Either write it or drop
+  the citations.
+- `wiki/entities/` is empty, yet `app/models/*.py` cite `wiki/entities/user.md`,
+  `rocket.md`, `motor.md`, `flight.md`, `launch-site.md`, `launch-event.md` and
+  `inventory.md`. The `src/db/schema.ts` port carries the same entities and the
+  same missing pages.
+- `wiki/overview.md` is still the placeholder line "Purpose, linked-repo
+  summary, metadata." and does not describe the (now Cloudflare) tech stack.
+- The repo `.env` names two different passwords for the same PostgreSQL role
+  (`TRIPLET_DATABASE_URL` vs `TRIPLET_TEST_DATABASE_URL`), so the legacy test
+  suite cannot authenticate against a database the app can reach. Only affects
+  the retained Python service — see `docs/legacy-fastapi.md`.
+- `tests/conftest.py` parses `TRIPLET_TEST_DATABASE_URL` with `urlsplit`, which
+  silently loses the database name when the password contains a raw `#`.
+  SQLAlchemy accepts that URL, so the app starts and only the tests fail.
+
+## 2026-09-10 — Security baseline
+
+Full assessment with source citations, severities and remediation:
+`docs/security-baseline-2026-09.md`. Summarised here because these are the
+highest-priority open items in the project.
+
+**Critical, unauthenticated account takeover:**
+
+- `X-Flyer-Id` and `X-Flyer-Email` request headers resolve a user in **every**
+  environment, not just tests — `src/middleware/auth.ts:264-279` has no
+  environment guard, unlike the fallback directly below it. (BL-01)
+- `verifyPassword` returns true when the stored hash equals the submitted
+  password, and for the literals `seeded_flyer_default` and
+  `argon2id-hash-placeholder` — `src/services/auth.ts:60-72`. (BL-02)
+
+**High:**
+
+- Session HMAC key falls back to a secret committed to the repository, and
+  nothing sets or requires `AUTH_SECRET` — `src/services/auth.ts:9`,
+  `wrangler.jsonc`. (BL-03)
+- `Cf-Access-Authenticated-User-Email` is trusted without verifying the Access
+  JWT, and auto-provisions a user with a TRA level 2 certification —
+  `src/middleware/auth.ts:214-256`. (BL-04)
+- No rate limiting, throttling or lockout on any authentication endpoint. (BL-05)
+
+**Medium and below:** missing `Secure` cookie attribute (BL-06), no CSRF
+origin check and GET-reachable logout (BL-07), no security response headers
+(BL-08), CDN scripts without Subresource Integrity (BL-09), WebAuthn missing
+origin, RP ID and counter verification (BL-10, BL-11), runtime-selected test
+bypass (BL-12), plaintext session token storage (BL-13), non-constant-time
+comparisons (BL-14), unbounded CSV import (BL-15).
+
+**Process:** CI runs no dependency, secret or static analysis scanning, and
+the repository has no linter at all (BL-16). Closing that is Phase 1 of the
+adoption plan in `docs/security-testing-process.md`.
