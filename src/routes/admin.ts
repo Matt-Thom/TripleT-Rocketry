@@ -329,8 +329,49 @@ adminRouter.post('/users/:id/status', async (c) => {
     .set({ isActive, updatedAt: Date.now() })
     .where(eq(schema.users.id, id))
 
-  // When deactivating, purge all server-side active sessions for this user
+  // When deactivating, purge and revoke all server-side active sessions for this user
   if (!isActive) {
+    const now = Date.now()
+
+    // Record user-level global revocation timestamp so any offline or existing token is permanently invalid
+    await db
+      .insert(schema.siteSettings)
+      .values({
+        key: `revoked_user:${id}`,
+        value: String(now),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.siteSettings.key,
+        set: { value: String(now), updatedAt: now },
+      })
+      .catch(() => {})
+
+    const userSessions = await db
+      .select({ token: schema.sessions.token })
+      .from(schema.sessions)
+      .where(eq(schema.sessions.userId, id))
+      .catch(() => [])
+
+    for (const s of userSessions) {
+      if (s.token?.trim()) {
+        await db
+          .insert(schema.siteSettings)
+          .values({
+            key: `revoked_session:${s.token.trim()}`,
+            value: 'admin_revoked',
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: schema.siteSettings.key,
+            set: { updatedAt: now },
+          })
+          .catch(() => {})
+      }
+    }
+
     await db.delete(schema.sessions).where(eq(schema.sessions.userId, id)).catch(() => {})
   }
 
@@ -376,6 +417,47 @@ adminRouter.post('/users/:id/delete', async (c) => {
       const errMsg = 'Cannot delete the last administrator account'
       if (isJson) return c.json({ error: errMsg }, 400)
       return c.text(errMsg, 400)
+    }
+  }
+
+  // Revoke all sessions in siteSettings before deleting
+  const userSessions = await db
+    .select({ token: schema.sessions.token })
+    .from(schema.sessions)
+    .where(eq(schema.sessions.userId, id))
+    .catch(() => [])
+
+  const now = Date.now()
+  // Record user-level global revocation timestamp
+  await db
+    .insert(schema.siteSettings)
+    .values({
+      key: `revoked_user:${id}`,
+      value: String(now),
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.siteSettings.key,
+      set: { value: String(now), updatedAt: now },
+    })
+    .catch(() => {})
+
+  for (const s of userSessions) {
+    if (s.token?.trim()) {
+      await db
+        .insert(schema.siteSettings)
+        .values({
+          key: `revoked_session:${s.token.trim()}`,
+          value: 'admin_revoked',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: schema.siteSettings.key,
+          set: { updatedAt: now },
+        })
+        .catch(() => {})
     }
   }
 

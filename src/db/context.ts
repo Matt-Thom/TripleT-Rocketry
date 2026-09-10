@@ -47,38 +47,52 @@ export async function getActiveFlyer(
   const firstUser = existingUsers[0]
 
   if (!firstUser) {
-    // Lazily seed primary Australian flyer
-    const defaultPasswordHash = await hashPassword('rocketry123!')
+    try {
+      // Lazily seed primary Australian flyer
+      const defaultPasswordHash = await hashPassword('rocketry123!')
 
-    // 1. TripleT Pilot (TRA Level 2 - Victoria, Australia)
-    const [pilot1] = await db
-      .insert(schema.users)
-      .values({
-        email: 'flyer@rocketry.local',
-        displayName: 'TripleT Pilot',
-        passwordHash: defaultPasswordHash,
-        isActive: true,
-      })
-      .returning()
+      // 1. TripleT Pilot (TRA Level 2 - Victoria, Australia)
+      const [pilot1] = await db
+        .insert(schema.users)
+        .values({
+          email: 'flyer@rocketry.local',
+          displayName: 'TripleT Pilot',
+          passwordHash: defaultPasswordHash,
+          isActive: true,
+        })
+        .onConflictDoNothing()
+        .returning()
 
-    await db.insert(schema.certifications).values({
-      userId: pilot1.id,
-      certifyingBody: 'TRA',
-      level: 2,
-      certNumber: 'TRA-AU-14820',
-      expiresOn: '2028-12-31',
-    })
+      if (pilot1) {
+        await db
+          .insert(schema.certifications)
+          .values({
+            userId: pilot1.id,
+            certifyingBody: 'TRA',
+            level: 2,
+            certNumber: 'TRA-AU-14820',
+            expiresOn: '2028-12-31',
+          })
+          .catch(() => {})
 
-    // Auto-seed Australian launch facilities if table is empty
-    await ensureAustralianLaunchSites(db)
+        // Auto-seed Australian launch facilities if table is empty
+        await ensureAustralianLaunchSites(db).catch(() => {})
 
-    return {
-      id: pilot1.id,
-      email: pilot1.email,
-      displayName: pilot1.displayName,
-      maxCertLevel: 2,
-      certNumber: 'TRA-AU-14820',
-      certifyingBody: 'TRA',
+        return {
+          id: pilot1.id,
+          email: pilot1.email,
+          displayName: pilot1.displayName,
+          maxCertLevel: 2,
+          certNumber: 'TRA-AU-14820',
+          certifyingBody: 'TRA',
+        }
+      }
+    } catch {}
+
+    // In case of concurrent insert race, query the user created by the winning request
+    const [concurrentUser] = await db.select().from(schema.users).limit(1).catch(() => [])
+    if (concurrentUser) {
+      return buildFlyerContext(db, concurrentUser)
     }
   }
 

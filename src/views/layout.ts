@@ -69,6 +69,14 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
   </script>
   <!-- HTMX v2.0.4 CDN -->
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Safari/WebKit bfcache back-navigation defense: force full reload if page was cached -->
+  <script>
+    window.addEventListener('pageshow', function(event) {
+      if (event.persisted) {
+        window.location.reload();
+      }
+    });
+  </script>
 </head>
 <body class="h-full min-h-screen flex flex-col bg-slate-900 text-slate-100 antialiased selection:bg-brand-500 selection:text-slate-950">
 

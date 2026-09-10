@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'hono'
-import { eq } from 'drizzle-orm'
+import { eq, lte } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { getActiveFlyer, getAllFlyers, cleanupDemoPilots, type ActiveFlyer } from '../db/context'
@@ -12,9 +12,15 @@ import {
   hashPassword,
   verifyPassword,
   signSession,
+  verifySession,
   createSessionCookie,
   createLogoutCookie,
+  createLoggedOutMarkerCookie,
+  createClearLoggedOutCookie,
+  getSessionMaxAge,
+  SESSION_MAX_AGE_SECONDS,
   parseCookies,
+  getAllCookieValues,
 } from '../services/auth'
 import { pageLayout } from '../views/layout'
 import { loginView, registerView } from '../views/auth'
@@ -29,7 +35,29 @@ type Bindings = {
 export const authRouter = new Hono<{ Bindings: Bindings }>()
 
 /**
-<<<<<<< HEAD
+ * Compute a safe session issuance timestamp that is guaranteed to be strictly greater
+ * than any preceding user-level revocation timestamp (revoked_user:userId), preventing
+ * rapid sign-out / sign-in millisecond collision.
+ */
+async function getSafeSessionTimestamp(db: any, userId: string): Promise<number> {
+  const now = Date.now()
+  try {
+    const [row] = await db
+      .select()
+      .from(schema.siteSettings)
+      .where(eq(schema.siteSettings.key, `revoked_user:${userId}`))
+      .limit(1)
+    if (row) {
+      const revokedBefore = parseInt(row.value, 10)
+      if (!isNaN(revokedBefore) && revokedBefore >= now) {
+        return revokedBefore + 1
+      }
+    }
+  } catch {}
+  return now
+}
+
+/**
  * Convert a base64url or base64 string to a Uint8Array.
  */
 function base64UrlToUint8Array(base64url: string): Uint8Array {
@@ -203,30 +231,41 @@ authRouter.post('/login', async (c) => {
   }
 
   // Persist session into D1 sessions table
-  const token = await signSession(user.id, c.env.AUTH_SECRET)
+  const maxAge = getSessionMaxAge(c.env)
+  const tokenTimestamp = await getSafeSessionTimestamp(db, user.id)
+  const token = await signSession(user.id, c.env.AUTH_SECRET, tokenTimestamp)
   const sessionId = crypto.randomUUID()
   const now = Date.now()
-  const expiresAt = now + 30 * 24 * 60 * 60 * 1000 // 30 days
-  await db.insert(schema.sessions).values({
-    id: sessionId,
-    userId: user.id,
-    token,
-    expiresAt,
-    createdAt: now,
-  })
+  const expiresAt = now + maxAge * 1000
+  await db
+    .insert(schema.sessions)
+    .values({
+      id: sessionId,
+      userId: user.id,
+      token,
+      expiresAt,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.sessions.token,
+      set: { expiresAt, createdAt: now },
+    })
 
   // Clear any past revoked status for this token
   await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_session:${token}`)).catch(() => {})
 
-  const cookie = createSessionCookie(token)
+  const cookie = createSessionCookie(token, maxAge)
+  const clearLoggedOut = createClearLoggedOutCookie()
 
   if (isJson) {
-    return c.json({ status: 'ok', userId: user.id, email: user.email }, 200, {
-      'Set-Cookie': cookie,
-    })
+    const resHeaders = new Headers()
+    resHeaders.set('Set-Cookie', cookie)
+    resHeaders.append('Set-Cookie', clearLoggedOut)
+    return c.json({ status: 'ok', userId: user.id, email: user.email }, 200, resHeaders as any)
   }
 
   c.header('Set-Cookie', cookie)
+  c.header('Set-Cookie', clearLoggedOut, { append: true })
   return c.redirect(redirectUrl, 302)
 })
 
@@ -341,43 +380,153 @@ authRouter.post('/register', async (c) => {
   }
 
   // Persist session into D1 sessions table
-  const token = await signSession(newUser.id, c.env.AUTH_SECRET)
+  const maxAge = getSessionMaxAge(c.env)
+  const tokenTimestamp = await getSafeSessionTimestamp(db, newUser.id)
+  const token = await signSession(newUser.id, c.env.AUTH_SECRET, tokenTimestamp)
   const sessionId = crypto.randomUUID()
-  const expiresAt = now + 30 * 24 * 60 * 60 * 1000
-  await db.insert(schema.sessions).values({
-    id: sessionId,
-    userId: newUser.id,
-    token,
-    expiresAt,
-    createdAt: now,
-  })
+  const expiresAt = now + maxAge * 1000
+  await db
+    .insert(schema.sessions)
+    .values({
+      id: sessionId,
+      userId: newUser.id,
+      token,
+      expiresAt,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.sessions.token,
+      set: { expiresAt, createdAt: now },
+    })
 
-  const cookie = createSessionCookie(token)
+  // Clear any past revoked status for this token
+  await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_session:${token}`)).catch(() => {})
+
+  const cookie = createSessionCookie(token, maxAge)
+  const clearLoggedOut = createClearLoggedOutCookie()
 
   if (isJson) {
-    return c.json({ status: 'created', userId: newUser.id, email: newUser.email }, 201, {
-      'Set-Cookie': cookie,
-    })
+    const resHeaders = new Headers()
+    resHeaders.set('Set-Cookie', cookie)
+    resHeaders.append('Set-Cookie', clearLoggedOut)
+    return c.json({ status: 'created', userId: newUser.id, email: newUser.email }, 201, resHeaders as any)
   }
 
   c.header('Set-Cookie', cookie)
+  c.header('Set-Cookie', clearLoggedOut, { append: true })
   return c.redirect(redirectUrl, 302)
 })
 
 /**
- * GET/POST /logout - Clear session from D1, emit Clear-Site-Data and Max-Age=0 cookie, and redirect.
+ * GET/POST /logout, /signout, /sign-out - Invalidate session in D1, revoke token, clear cookies, and redirect.
+ * Supports multi-device / global sign-out via ?all=true, /logout/all, or { all: true } body.
  */
 const handleLogout = async (c: any) => {
-  const cookies = parseCookies(c.req.header('cookie') || null)
-  const token = cookies.triplet_session
-  const cookie = createLogoutCookie()
+  const rawCookieHeader = c.req.header('cookie') || null
+  const cookies = parseCookies(rawCookieHeader)
+  const tokensToRevoke = new Set<string>()
 
-  if (token) {
-    const db = drizzle(c.env.DB, { schema })
-    const now = Date.now()
+  const addCleanToken = (t?: string | null) => {
+    if (!t || typeof t !== 'string') return
+    let clean = t.trim()
+    if (clean.startsWith('"') && clean.endsWith('"') && clean.length >= 2) {
+      clean = clean.slice(1, -1).trim()
+    }
+    if (clean) tokensToRevoke.add(clean)
+  }
+
+  // Collect all triplet_session cookies from the Cookie header
+  const sessionCookies = getAllCookieValues(rawCookieHeader, 'triplet_session')
+  for (const cToken of sessionCookies) {
+    addCleanToken(cToken)
+  }
+  addCleanToken(cookies.triplet_session)
+
+  // Case-insensitive Bearer authorization scheme
+  const authHeader = c.req.header('authorization') || ''
+  const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
+  if (bearerMatch) {
+    addCleanToken(bearerMatch[1])
+  }
+
+  addCleanToken(c.req.header('x-session-token'))
+
+  let isGlobalLogout =
+    c.req.query('all') === 'true' ||
+    c.req.query('global') === 'true' ||
+    c.req.query('all_devices') === 'true' ||
+    c.req.query('everywhere') === 'true' ||
+    c.req.path.endsWith('/all')
+
+  try {
+    if (c.req.header('content-type')?.includes('application/json')) {
+      const body = await c.req.json().catch(() => ({}))
+      addCleanToken(body.token || body.sessionToken || body.triplet_session)
+      if (body.all === true || body.global === true || body.allDevices === true || body.all_devices === true) {
+        isGlobalLogout = true
+      }
+    } else if (c.req.method === 'POST') {
+      const body = await c.req.parseBody().catch(() => ({}))
+      addCleanToken(body.token || body.sessionToken || body.triplet_session)
+      if (body.all === 'true' || body.all === true || body.global === 'true' || body.global === true) {
+        isGlobalLogout = true
+      }
+    }
+  } catch {}
+
+  addCleanToken(c.req.query('token') || c.req.query('session_token'))
+
+  const db = drizzle(c.env.DB, { schema })
+  const now = Date.now()
+
+  // Find user ID for global sign-out or session cleanup
+  let currentUserId: string | null = (c.get as any)('user')?.id || null
+
+  if (!currentUserId && tokensToRevoke.size > 0) {
+    for (const token of tokensToRevoke) {
+      const verified = await verifySession(token, (c.env as any)?.AUTH_SECRET)
+      if (verified) {
+        currentUserId = verified
+        break
+      }
+    }
+  }
+
+  // If global signout requested and user identified, revoke all user sessions
+  if (isGlobalLogout && currentUserId) {
+    // Record user-level global revocation timestamp
+    await db
+      .insert(schema.siteSettings)
+      .values({
+        key: `revoked_user:${currentUserId}`,
+        value: String(now),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.siteSettings.key,
+        set: { value: String(now), updatedAt: now },
+      })
+      .catch(() => {})
+
+    // Collect all tokens for this user in D1
+    const userSessions = await db
+      .select({ token: schema.sessions.token })
+      .from(schema.sessions)
+      .where(eq(schema.sessions.userId, currentUserId))
+      .catch(() => [])
+
+    for (const s of userSessions) {
+      addCleanToken(s.token)
+    }
+
+    await db.delete(schema.sessions).where(eq(schema.sessions.userId, currentUserId)).catch(() => {})
+  }
+
+  for (const token of tokensToRevoke) {
     // Delete session from D1 sessions table
     await db.delete(schema.sessions).where(eq(schema.sessions.token, token)).catch(() => {})
-    // Record token revocation in site_settings to prevent bfcache or replay reuse
+    // Record token revocation in site_settings to prevent replay reuse
     await db
       .insert(schema.siteSettings)
       .values({
@@ -393,25 +542,73 @@ const handleLogout = async (c: any) => {
       .catch(() => {})
   }
 
+  // Also clean up any expired sessions in D1
+  await db.delete(schema.sessions).where(lte(schema.sessions.expiresAt, now)).catch(() => {})
+
+  const cookie = createLogoutCookie()
+  const loggedOutMarker = createLoggedOutMarkerCookie()
+  const clearWebAuthn = 'webauthn_challenge=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+
   const headers = new Headers()
   headers.set('Set-Cookie', cookie)
+  headers.append('Set-Cookie', loggedOutMarker)
+  headers.append('Set-Cookie', clearWebAuthn)
   headers.set('Clear-Site-Data', '"cache", "cookies", "storage"')
   headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  headers.set('Pragma', 'no-cache')
 
-  if (c.req.header('accept')?.includes('application/json')) {
-    return c.json({ status: 'ok', message: 'Logged out' }, 200, {
-      'Set-Cookie': cookie,
-      'Clear-Site-Data': '"cache", "cookies", "storage"',
-      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-    })
+  c.header('Set-Cookie', cookie)
+  c.header('Set-Cookie', loggedOutMarker, { append: true })
+  c.header('Set-Cookie', clearWebAuthn, { append: true })
+  c.header('Clear-Site-Data', '"cache", "cookies", "storage"')
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  c.header('Pragma', 'no-cache')
+
+  const acceptsJson =
+    c.req.header('accept')?.includes('application/json') ||
+    c.req.header('content-type')?.includes('application/json')
+
+  const isHtmx = c.req.header('HX-Request') === 'true'
+
+  if (acceptsJson) {
+    return c.json({ status: 'ok', message: 'Logged out' }, 200, headers as any)
   }
 
-  headers.set('Location', '/login')
+  const rawRedirect = c.req.query('redirect') || '/login'
+  const redirectUrl =
+    rawRedirect.startsWith('/') &&
+    !rawRedirect.startsWith('//') &&
+    !rawRedirect.startsWith('/\\') &&
+    !rawRedirect.includes('\\')
+      ? rawRedirect
+      : '/login'
+  headers.set('Location', redirectUrl)
+  if (isHtmx) {
+    headers.set('HX-Redirect', redirectUrl)
+  }
   return new Response(null, { status: 302, headers })
 }
 
 authRouter.get('/logout', handleLogout)
 authRouter.post('/logout', handleLogout)
+authRouter.get('/logout/all', handleLogout)
+authRouter.post('/logout/all', handleLogout)
+authRouter.get('/signout', handleLogout)
+authRouter.post('/signout', handleLogout)
+authRouter.get('/signout/all', handleLogout)
+authRouter.post('/signout/all', handleLogout)
+authRouter.get('/sign-out', handleLogout)
+authRouter.post('/sign-out', handleLogout)
+authRouter.get('/auth/logout', handleLogout)
+authRouter.post('/auth/logout', handleLogout)
+authRouter.get('/auth/logout/all', handleLogout)
+authRouter.post('/auth/logout/all', handleLogout)
+authRouter.get('/auth/signout', handleLogout)
+authRouter.post('/auth/signout', handleLogout)
+authRouter.get('/auth/signout/all', handleLogout)
+authRouter.post('/auth/signout/all', handleLogout)
+authRouter.get('/auth/sign-out', handleLogout)
+authRouter.post('/auth/sign-out', handleLogout)
 
 /**
  * POST /auth/switch/:id - Convenience quick-switch for authenticated flyer accounts.
@@ -430,24 +627,37 @@ authRouter.post('/auth/switch/:id', async (c) => {
     return c.redirect('/login', 302)
   }
 
-  const token = await signSession(user.id, c.env.AUTH_SECRET)
+  const maxAge = getSessionMaxAge(c.env)
+  const tokenTimestamp = await getSafeSessionTimestamp(db, user.id)
+  const token = await signSession(user.id, c.env.AUTH_SECRET, tokenTimestamp)
   const sessionId = crypto.randomUUID()
   const now = Date.now()
-  const expiresAt = now + 30 * 24 * 60 * 60 * 1000
+  const expiresAt = now + maxAge * 1000
 
-  await db.insert(schema.sessions).values({
-    id: sessionId,
-    userId: user.id,
-    token,
-    expiresAt,
-    createdAt: now,
-  })
+  await db
+    .insert(schema.sessions)
+    .values({
+      id: sessionId,
+      userId: user.id,
+      token,
+      expiresAt,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.sessions.token,
+      set: { expiresAt, createdAt: now },
+    })
 
-  const cookie = createSessionCookie(token)
+  // Clear any past revoked status for this token
+  await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_session:${token}`)).catch(() => {})
+
+  const cookie = createSessionCookie(token, maxAge)
+  const clearLoggedOut = createClearLoggedOutCookie()
   const rawRedirect = c.req.query('redirect') || '/'
   const redirectUrl = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
 
   c.header('Set-Cookie', cookie)
+  c.header('Set-Cookie', clearLoggedOut, { append: true })
   return c.redirect(redirectUrl, 302)
 })
 
@@ -799,23 +1009,37 @@ authRouter.post('/auth/webauthn/login-verify', async (c) => {
     .where(eq(schema.userCredentials.id, credential.id))
 
   // 10. Issue session and persist in D1 sessions table
-  const token = await signSession(user.id, c.env.AUTH_SECRET)
+  const maxAge = getSessionMaxAge(c.env)
+  const tokenTimestamp = await getSafeSessionTimestamp(db, user.id)
+  const token = await signSession(user.id, c.env.AUTH_SECRET, tokenTimestamp)
   const sessionId = crypto.randomUUID()
-  const expiresAt = now + 30 * 24 * 60 * 60 * 1000
+  const expiresAt = now + maxAge * 1000
 
-  await db.insert(schema.sessions).values({
-    id: sessionId,
-    userId: user.id,
-    token,
-    expiresAt,
-    createdAt: now,
-  })
+  await db
+    .insert(schema.sessions)
+    .values({
+      id: sessionId,
+      userId: user.id,
+      token,
+      expiresAt,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.sessions.token,
+      set: { expiresAt, createdAt: now },
+    })
 
   // Clear any past revoked status for this token
   await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_session:${token}`)).catch(() => {})
 
-  const cookie = createSessionCookie(token)
+  const cookie = createSessionCookie(token, maxAge)
+  const clearLoggedOut = createClearLoggedOutCookie()
   c.header('Set-Cookie', cookie)
+  c.header('Set-Cookie', clearLoggedOut, { append: true })
+
+  const resHeaders = new Headers()
+  resHeaders.set('Set-Cookie', cookie)
+  resHeaders.append('Set-Cookie', clearLoggedOut)
 
   return c.json({
     status: 'ok',
@@ -826,7 +1050,5 @@ authRouter.post('/auth/webauthn/login-verify', async (c) => {
       displayName: user.displayName,
       role: user.role,
     },
-  }, 200, {
-    'Set-Cookie': cookie,
-  })
+  }, 200, resHeaders as any)
 })

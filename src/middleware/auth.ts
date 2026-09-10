@@ -12,17 +12,31 @@
  */
 
 import type { Context, Next } from 'hono'
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import type { DrizzleD1Database } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { getActiveFlyer, type ActiveFlyer } from '../db/context'
-import { parseCookies, verifySession, hashPassword } from '../services/auth'
+import {
+  parseCookies,
+  getAllCookieValues,
+  verifySession,
+  hashPassword,
+  createLogoutCookie,
+  createLoggedOutMarkerCookie,
+  getSessionMaxAge,
+  SESSION_MAX_AGE_SECONDS,
+} from '../services/auth'
 
 const PUBLIC_PATHS = [
   '/login',
   '/register',
   '/logout',
+  '/signout',
+  '/sign-out',
+  '/auth/logout',
+  '/auth/signout',
+  '/auth/sign-out',
   '/health',
   '/ready',
   '/setup',
@@ -70,12 +84,184 @@ async function isTokenRevoked(db: DrizzleD1Database<any>, token: string): Promis
     const [row] = await db
       .select()
       .from(schema.siteSettings)
-      .where(eq(schema.siteSettings.key, `revoked_session:${token}`))
+      .where(
+        or(
+          eq(schema.siteSettings.key, `revoked_session:${token}`),
+          eq(schema.siteSettings.key, `revoked_session:"${token}"`),
+        ),
+      )
       .limit(1)
     return Boolean(row)
   } catch {
     return false
   }
+}
+
+/**
+ * Validate a session token against D1 revocation, signature validity, and D1 expiration.
+ */
+async function validateSessionToken(
+  db: DrizzleD1Database<any>,
+  token: string,
+  authSecret?: string,
+  isTestOrLocal: boolean = false,
+  maxAgeSeconds: number = SESSION_MAX_AGE_SECONDS,
+): Promise<{ valid: boolean; flyer: ActiveFlyer | null }> {
+  let cleanToken = token.trim()
+  if (cleanToken.startsWith('"') && cleanToken.endsWith('"') && cleanToken.length >= 2) {
+    cleanToken = cleanToken.slice(1, -1).trim()
+  }
+  if (!cleanToken) {
+    return { valid: false, flyer: null }
+  }
+
+  // 1. Check if token is explicitly revoked in siteSettings
+  const isRevoked = await isTokenRevoked(db, cleanToken)
+  if (isRevoked) {
+    return { valid: false, flyer: null }
+  }
+
+  // 2. Cryptographic signature and lifetime verification
+  const verifiedUserId = await verifySession(cleanToken, authSecret, maxAgeSeconds)
+  if (!verifiedUserId) {
+    // Purge expired or invalid signature session from D1 if present (do not pollute site_settings on arbitrary garbage)
+    await db.delete(schema.sessions).where(eq(schema.sessions.token, cleanToken)).catch(() => {})
+    return { valid: false, flyer: null }
+  }
+
+  // 2b. Check if user-level global revocation was issued after this token was created
+  const parts = cleanToken.split(':')
+  const tokenTimestamp = parts.length === 3 ? parseInt(parts[1], 10) : NaN
+  if (!isNaN(tokenTimestamp)) {
+    try {
+      const [userRevocationRow] = await db
+        .select()
+        .from(schema.siteSettings)
+        .where(eq(schema.siteSettings.key, `revoked_user:${verifiedUserId}`))
+        .limit(1)
+      if (userRevocationRow) {
+        const revokedBefore = parseInt(userRevocationRow.value, 10)
+        if (!isNaN(revokedBefore) && tokenTimestamp <= revokedBefore) {
+          // Token was issued before global sign-out or admin deactivation
+          await db.delete(schema.sessions).where(eq(schema.sessions.token, cleanToken)).catch(() => {})
+          return { valid: false, flyer: null }
+        }
+      }
+    } catch {}
+  }
+
+  const now = Date.now()
+  // 3. Query D1 sessions table
+  let sessionRecord = await db
+    .select()
+    .from(schema.sessions)
+    .where(eq(schema.sessions.token, cleanToken))
+    .limit(1)
+    .then((r) => r[0])
+    .catch(() => null)
+
+  // 4. Check expiration in database
+  if (
+    sessionRecord &&
+    (sessionRecord.expiresAt <= now ||
+      (sessionRecord.createdAt &&
+        (now - sessionRecord.createdAt > maxAgeSeconds * 1000 ||
+          sessionRecord.createdAt > now + 60000)))
+  ) {
+    // Delete expired session from D1
+    await db.delete(schema.sessions).where(eq(schema.sessions.token, cleanToken)).catch(() => {})
+    // Record revocation so it cannot be re-inserted or re-used
+    await db
+      .insert(schema.siteSettings)
+      .values({
+        key: `revoked_session:${cleanToken}`,
+        value: 'expired',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.siteSettings.key,
+        set: { updatedAt: now },
+      })
+      .catch(() => {})
+    return { valid: false, flyer: null }
+  }
+
+  // 5. Handle missing session record (lazy insertion for direct signSession test callers)
+  if (!sessionRecord) {
+    if (isTestOrLocal) {
+      const [user] = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, verifiedUserId))
+        .limit(1)
+        .catch(() => [])
+
+      if (user && user.isActive) {
+        const sessionId = crypto.randomUUID()
+        const expiresAt = now + maxAgeSeconds * 1000
+        await db
+          .insert(schema.sessions)
+          .values({
+            id: sessionId,
+            userId: user.id,
+            token: cleanToken,
+            expiresAt,
+            createdAt: now,
+          })
+          .onConflictDoUpdate({
+            target: schema.sessions.token,
+            set: { expiresAt, createdAt: now },
+          })
+          .catch(() => {})
+
+        sessionRecord = {
+          id: sessionId,
+          userId: user.id,
+          token: cleanToken,
+          expiresAt,
+          createdAt: now,
+        }
+      } else {
+        return { valid: false, flyer: null }
+      }
+    } else {
+      return { valid: false, flyer: null }
+    }
+  }
+
+  // 6. Verify user status
+  const [userRecord] = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.id, sessionRecord.userId))
+    .limit(1)
+    .catch(() => [])
+
+  if (!userRecord || !userRecord.isActive) {
+    await db.delete(schema.sessions).where(eq(schema.sessions.token, cleanToken)).catch(() => {})
+    await db
+      .insert(schema.siteSettings)
+      .values({
+        key: `revoked_session:${cleanToken}`,
+        value: !userRecord ? 'user_deleted' : 'user_deactivated',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: schema.siteSettings.key,
+        set: { updatedAt: now },
+      })
+      .catch(() => {})
+    return { valid: false, flyer: null }
+  }
+
+  const flyer = await getActiveFlyer(db, userRecord.id).catch(() => null)
+  if (!flyer) {
+    return { valid: false, flyer: null }
+  }
+
+  return { valid: true, flyer }
 }
 
 export async function authMiddleware(c: Context, next: Next) {
@@ -88,7 +274,8 @@ export async function authMiddleware(c: Context, next: Next) {
     Boolean((c.env as any)?.TEST_MIGRATIONS) ||
     c.env?.ENVIRONMENT === 'test'
   const isExplicitUnconfiguredTest = c.req.header('x-test-unconfigured') === 'true'
-  const cookies = parseCookies(c.req.header('cookie') || null)
+  const rawCookieHeader = c.req.header('cookie') || null
+  const cookies = parseCookies(rawCookieHeader)
   const isCookieless = cookies.triplet_session === undefined
 
   if (!isConfigured) {
@@ -105,114 +292,39 @@ export async function authMiddleware(c: Context, next: Next) {
 
   let flyer: ActiveFlyer | null = null
   let invalidSession = false
+  const hasLoggedOutMarker = cookies.triplet_logged_out === '1'
+  const maxAgeSeconds = getSessionMaxAge(c.env)
 
-  // 2. Cookie session with D1 server-side validation
+  // 2. Cookie session with D1 server-side validation (checks all candidates if multiple triplet_session cookies are sent)
   if (cookies.triplet_session !== undefined) {
-    const sessionToken = cookies.triplet_session.trim()
-    if (!sessionToken) {
+    const candidateTokens = getAllCookieValues(rawCookieHeader, 'triplet_session')
+    if (candidateTokens.length === 0) {
       invalidSession = true
     } else {
-      const isRevoked = await isTokenRevoked(db, sessionToken)
-      if (isRevoked) {
-        invalidSession = true
-      } else {
-        const verifiedUserId = await verifySession(sessionToken, (c.env as any)?.AUTH_SECRET)
-        if (!verifiedUserId) {
-          invalidSession = true
-        } else {
-          const now = Date.now()
-          let sessionRecord = await db
-            .select()
-            .from(schema.sessions)
-            .where(eq(schema.sessions.token, sessionToken))
-            .limit(1)
-            .then((r) => r[0])
-            .catch(() => null)
-
-          if (sessionRecord && sessionRecord.expiresAt <= now) {
-            invalidSession = true
-          } else if (!sessionRecord) {
-            // In test environment, support tokens signed directly via signSession if not revoked
-            if (isTestOrLocal) {
-              const [user] = await db
-                .select()
-                .from(schema.users)
-                .where(eq(schema.users.id, verifiedUserId))
-                .limit(1)
-                .catch(() => [])
-
-              if (user && user.isActive) {
-                const sessionId = crypto.randomUUID()
-                const expiresAt = now + 30 * 24 * 60 * 60 * 1000
-                await db
-                  .insert(schema.sessions)
-                  .values({
-                    id: sessionId,
-                    userId: user.id,
-                    token: sessionToken,
-                    expiresAt,
-                    createdAt: now,
-                  })
-                  .catch(() => {})
-
-                sessionRecord = {
-                  id: sessionId,
-                  userId: user.id,
-                  token: sessionToken,
-                  expiresAt,
-                  createdAt: now,
-                }
-              } else {
-                invalidSession = true
-              }
-            } else {
-              invalidSession = true
-            }
-          }
-
-          if (sessionRecord && !invalidSession) {
-            const [userRecord] = await db
-              .select()
-              .from(schema.users)
-              .where(eq(schema.users.id, sessionRecord.userId))
-              .limit(1)
-              .catch(() => [])
-
-            if (!userRecord || !userRecord.isActive) {
-              invalidSession = true
-            } else {
-              flyer = await getActiveFlyer(db, userRecord.id).catch(() => null)
-            }
-          }
+      let foundValid = false
+      for (const tokenCandidate of candidateTokens) {
+        const res = await validateSessionToken(
+          db,
+          tokenCandidate,
+          (c.env as any)?.AUTH_SECRET,
+          isTestOrLocal,
+          maxAgeSeconds,
+        )
+        if (res.valid && res.flyer) {
+          flyer = res.flyer
+          foundValid = true
+          invalidSession = false
+          break
         }
       }
-    }
-  }
-
-  // 3. Skip auth enforcement on public endpoints (attach user if available)
-  if (isPublicPath(path)) {
-    if (flyer) {
-      const [userRecord] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, flyer.id))
-        .limit(1)
-        .catch(() => [])
-
-      const userContext = {
-        ...flyer,
-        role: userRecord?.role || 'flyer',
-        regulatoryRegion: userRecord?.regulatoryRegion || 'SA',
+      if (!foundValid) {
+        invalidSession = true
       }
-      c.set('user', userContext as any)
-      c.set('activeFlyer', userContext as any)
     }
-    await next()
-    return
   }
 
-  // 4. Cloudflare Access SSO header
-  if (!flyer && !invalidSession) {
+  // 3. Cloudflare Access SSO header
+  if (!flyer) {
     const cfAccessEmail = c.req.header('cf-access-authenticated-user-email')?.trim()
     if (cfAccessEmail) {
       const [existing] = await db
@@ -249,38 +361,64 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 5. Authorization Bearer header
-  if (!flyer && !invalidSession) {
+  // 4. Authorization Bearer header (RFC 6750 case-insensitive, takes precedence over stale/logged-out cookie states)
+  if (!flyer) {
     const authHeader = c.req.header('authorization') || ''
-    if (authHeader.startsWith('Bearer ')) {
-      const token = authHeader.slice(7).trim()
-      const userId = await verifySession(token, (c.env as any)?.AUTH_SECRET)
-      if (userId) {
-        flyer = await getActiveFlyer(db, userId).catch(() => null)
+    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
+    if (bearerMatch) {
+      const token = bearerMatch[1].trim()
+      if (!token) {
+        invalidSession = true
+      } else {
+        const res = await validateSessionToken(
+          db,
+          token,
+          (c.env as any)?.AUTH_SECRET,
+          isTestOrLocal,
+          maxAgeSeconds,
+        )
+        if (res.valid && res.flyer) {
+          flyer = res.flyer
+          invalidSession = false
+        } else {
+          invalidSession = true
+        }
       }
     }
   }
 
-  // 6. Direct developer / test flyer header
+  // 5. Direct developer / test flyer header
   if (!flyer && !invalidSession) {
     const headerUserId = c.req.header('x-flyer-id')
     const headerUserEmail = c.req.header('x-flyer-email')
     if (headerUserId) {
-      flyer = await getActiveFlyer(db, headerUserId).catch(() => null)
+      const [u] = await db
+        .select()
+        .from(schema.users)
+        .where(eq(schema.users.id, headerUserId))
+        .limit(1)
+        .catch(() => [])
+      if (u && u.isActive) {
+        flyer = await getActiveFlyer(db, u.id).catch(() => null)
+      } else {
+        invalidSession = true
+      }
     } else if (headerUserEmail) {
       const [u] = await db
         .select()
         .from(schema.users)
         .where(eq(schema.users.email, headerUserEmail.toLowerCase()))
-      if (u) {
+      if (u && u.isActive) {
         flyer = await getActiveFlyer(db, u.id).catch(() => null)
+      } else {
+        invalidSession = true
       }
     }
   }
 
-  // 7. Test/local dev environment fallback (only for cookieless requests when not explicitly invalid)
+  // 6. Test/local dev environment fallback (only for cookieless requests when not explicitly invalid and not signed out)
   // Exclude /admin paths so unauthenticated requests cleanly redirect to /login (HTTP 302)
-  if (!flyer && !invalidSession && !path.startsWith('/admin')) {
+  if (!flyer && !invalidSession && !hasLoggedOutMarker && !path.startsWith('/admin')) {
     const isExplicitNoAuth = c.req.header('x-no-auth') === 'true'
 
     if (!isExplicitNoAuth && isTestOrLocal && isCookieless) {
@@ -288,32 +426,86 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // If unauthenticated or session invalid, enforce access control
+  // 7. Attach resolved flyer and user context if authenticated
+  if (flyer) {
+    const [userRecord] = await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, flyer.id))
+      .limit(1)
+      .catch(() => [])
+
+    const userContext = {
+      ...flyer,
+      role: userRecord?.role || 'flyer',
+      regulatoryRegion: userRecord?.regulatoryRegion || 'SA',
+    }
+    c.set('user', userContext as any)
+    c.set('activeFlyer', userContext as any)
+  }
+
+  // 8. Skip auth enforcement on public endpoints (attached user remains in context; purge stale cookies if invalid)
+  if (isPublicPath(path)) {
+    if (invalidSession) {
+      c.header('Set-Cookie', createLogoutCookie())
+      c.header('Set-Cookie', createLoggedOutMarkerCookie(), { append: true })
+      c.header(
+        'Set-Cookie',
+        'webauthn_challenge=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+        { append: true },
+      )
+    }
+    await next()
+    return
+  }
+
+  // 9. If unauthenticated or session invalid, enforce access control
   if (!flyer) {
     const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    const isHtmx = c.req.header('HX-Request') === 'true'
+    const logoutCookie = createLogoutCookie()
+    const clearWebAuthn =
+      'webauthn_challenge=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+    const markerCookie = createLoggedOutMarkerCookie()
+    const targetUrl = encodeURIComponent(
+      c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+    )
+    const redirectLocation = `/login?redirect=${targetUrl}`
+
     if (acceptsHtml) {
-      const targetUrl = encodeURIComponent(c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''))
-      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+      const headers = new Headers()
+      headers.set('Set-Cookie', logoutCookie)
+      headers.append('Set-Cookie', clearWebAuthn)
+      if (invalidSession) {
+        headers.append('Set-Cookie', markerCookie)
+      }
+      headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+      headers.set('Pragma', 'no-cache')
+      headers.set('Location', redirectLocation)
+      if (isHtmx) {
+        headers.set('HX-Redirect', redirectLocation)
+      }
+      return new Response(null, { status: 302, headers })
     }
-    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+
+    const headers = new Headers()
+    headers.set('Set-Cookie', logoutCookie)
+    headers.append('Set-Cookie', clearWebAuthn)
+    if (invalidSession) {
+      headers.append('Set-Cookie', markerCookie)
+    }
+    headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+    headers.set('Pragma', 'no-cache')
+    if (isHtmx) {
+      headers.set('HX-Redirect', redirectLocation)
+    }
+
+    return c.json(
+      { error: 'Unauthorized', message: 'Authentication required' },
+      401,
+      headers as any,
+    )
   }
-
-  // Attach resolved user and active flyer to context with role and region
-  const [userRecord] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.id, flyer.id))
-    .limit(1)
-    .catch(() => [])
-
-  const userContext = {
-    ...flyer,
-    role: userRecord?.role || 'flyer',
-    regulatoryRegion: userRecord?.regulatoryRegion || 'SA',
-  }
-
-  c.set('user', userContext as any)
-  c.set('activeFlyer', userContext as any)
 
   await next()
 
@@ -323,5 +515,16 @@ export async function authMiddleware(c: Context, next: Next) {
   try {
     c.res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
     c.res.headers.set('Pragma', 'no-cache')
-  } catch {}
+  } catch {
+    if (c.res) {
+      const newHeaders = new Headers(c.res.headers)
+      newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+      newHeaders.set('Pragma', 'no-cache')
+      c.res = new Response(c.res.body, {
+        status: c.res.status,
+        statusText: c.res.statusText,
+        headers: newHeaders,
+      })
+    }
+  }
 }
