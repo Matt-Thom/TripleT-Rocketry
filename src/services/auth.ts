@@ -6,9 +6,11 @@
  * Fully compatible with Cloudflare Workers (workerd) and Node.js test environments.
  */
 
-const DEFAULT_AUTH_SECRET = 'triplet-rocketry-auth-secret-key-2026'
-const SESSION_COOKIE_NAME = 'triplet_session'
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60 // 30 days
+export const DEFAULT_AUTH_SECRET = 'triplet-rocketry-auth-secret-key-2026'
+export const SESSION_COOKIE_NAME = 'triplet_session'
+export const LOGGED_OUT_COOKIE_NAME = 'triplet_logged_out'
+export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60 // 30 days
+
 
 /**
  * Hash a plain-text password using PBKDF2 with SHA-256 and a random 16-byte salt.
@@ -113,8 +115,8 @@ export async function verifyPassword(
 export async function signSession(
   userId: string,
   secret: string = DEFAULT_AUTH_SECRET,
+  timestamp: number = Date.now(),
 ): Promise<string> {
-  const timestamp = Date.now()
   const payload = `${userId}:${timestamp}`
 
   const enc = new TextEncoder()
@@ -135,23 +137,100 @@ export async function signSession(
 }
 
 /**
+ * Constant-time equality comparison between two strings to prevent HMAC timing side-channels.
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
+/**
+ * Extract session max age in seconds from environment or default.
+ */
+export function getSessionMaxAge(env?: any): number {
+  const envVal = env?.SESSION_MAX_AGE_SECONDS
+  if (typeof envVal === 'number' && envVal > 0) return envVal
+  if (typeof envVal === 'string') {
+    const parsed = parseInt(envVal, 10)
+    if (!isNaN(parsed) && parsed > 0) return parsed
+  }
+  return SESSION_MAX_AGE_SECONDS
+}
+
+/**
+ * Extract all values for a specific cookie name from the Cookie header,
+ * stripping quotes and URL-decoding safely.
+ */
+export function getAllCookieValues(cookieHeader: string | null, cookieName: string): string[] {
+  if (!cookieHeader) return []
+  const values: string[] = []
+  for (const pair of cookieHeader.split(';')) {
+    const trimmed = pair.trim()
+    if (!trimmed) continue
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx > 0) {
+      const name = trimmed.slice(0, eqIdx).trim()
+      if (name === cookieName) {
+        const rawVal = trimmed.slice(eqIdx + 1).trim()
+        let val = rawVal
+        try {
+          val = decodeURIComponent(rawVal)
+        } catch {
+          val = rawVal
+        }
+        if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
+          val = val.slice(1, -1).trim()
+        }
+        if (val) {
+          values.push(val)
+        }
+      }
+    }
+  }
+  return values
+}
+
+/**
  * Verify an HMAC session token and return the authenticated user ID, or null if invalid/expired.
  */
 export async function verifySession(
   token: string,
   secret: string = DEFAULT_AUTH_SECRET,
+  maxAgeSeconds: number = SESSION_MAX_AGE_SECONDS,
 ): Promise<string | null> {
   if (!token || typeof token !== 'string') return null
+  let cleanToken = token.trim()
+  if (cleanToken.startsWith('"') && cleanToken.endsWith('"') && cleanToken.length >= 2) {
+    cleanToken = cleanToken.slice(1, -1).trim()
+  }
+  if (!cleanToken) return null
 
-  const parts = token.split(':')
+  const parts = cleanToken.split(':')
   if (parts.length !== 3) return null
 
   const [userId, timestampStr, sigHex] = parts
-  const timestamp = parseInt(timestampStr, 10)
-  if (isNaN(timestamp)) return null
+  if (!userId || !timestampStr || !sigHex) return null
+  if (!/^\d+$/.test(timestampStr)) return null
 
-  // Check 30-day expiration
-  if (Date.now() - timestamp > SESSION_MAX_AGE_SECONDS * 1000) {
+  const timestamp = parseInt(timestampStr, 10)
+  if (isNaN(timestamp) || timestamp <= 0) return null
+
+  const effectiveMaxAge =
+    typeof maxAgeSeconds === 'number' && maxAgeSeconds > 0
+      ? maxAgeSeconds
+      : SESSION_MAX_AGE_SECONDS
+
+  // Check expiration & clock skew tolerance
+  const now = Date.now()
+  if (now - timestamp > effectiveMaxAge * 1000) {
+    return null
+  }
+  if (timestamp > now + 60000) {
     return null
   }
 
@@ -170,7 +249,7 @@ export async function verifySession(
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
 
-  if (expectedHex !== sigHex) {
+  if (!timingSafeEqual(expectedHex, sigHex)) {
     return null
   }
 
@@ -190,8 +269,21 @@ export function parseCookies(cookieHeader: string | null): Record<string, string
     const eqIdx = trimmed.indexOf('=')
     if (eqIdx > 0) {
       const name = trimmed.slice(0, eqIdx).trim()
-      const val = trimmed.slice(eqIdx + 1).trim()
-      cookies[name] = decodeURIComponent(val)
+      const rawVal = trimmed.slice(eqIdx + 1).trim()
+      let val = rawVal
+      try {
+        val = decodeURIComponent(rawVal)
+      } catch {
+        val = rawVal
+      }
+      if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
+        val = val.slice(1, -1).trim()
+      }
+      // If a non-empty cookie value was already captured, do not let an empty duplicate overwrite it
+      if (cookies[name] && !val && cookies[name].trim()) {
+        continue
+      }
+      cookies[name] = val
     }
   }
 
@@ -201,8 +293,16 @@ export function parseCookies(cookieHeader: string | null): Record<string, string
 /**
  * Generate Set-Cookie header for an active session.
  */
-export function createSessionCookie(token: string): string {
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}`
+export function createSessionCookie(
+  token: string,
+  maxAgeSeconds: number = SESSION_MAX_AGE_SECONDS,
+): string {
+  const clean = (token || '').trim().replace(/^"+|"+$/g, '')
+  const effectiveMaxAge =
+    typeof maxAgeSeconds === 'number' && maxAgeSeconds > 0
+      ? maxAgeSeconds
+      : SESSION_MAX_AGE_SECONDS
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(clean)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${effectiveMaxAge}`
 }
 
 /**
@@ -212,4 +312,18 @@ export function createLogoutCookie(): string {
   return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
 }
 
-export { SESSION_COOKIE_NAME }
+/**
+ * Generate Set-Cookie header to set client-side logged-out marker.
+ */
+export function createLoggedOutMarkerCookie(): string {
+  return `${LOGGED_OUT_COOKIE_NAME}=1; Path=/; SameSite=Lax; Max-Age=86400`
+}
+
+/**
+ * Generate Set-Cookie header to clear client-side logged-out marker upon successful login.
+ */
+export function createClearLoggedOutCookie(): string {
+  return `${LOGGED_OUT_COOKIE_NAME}=; Path=/; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+}
+
+

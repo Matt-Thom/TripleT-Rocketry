@@ -13,6 +13,9 @@ import {
   hashPassword,
   signSession,
   createSessionCookie,
+  createClearLoggedOutCookie,
+  getSessionMaxAge,
+  SESSION_MAX_AGE_SECONDS,
 } from '../services/auth'
 import { pageLayout } from '../views/layout'
 import { setupWizardView, type SetupWizardViewOptions } from '../views/setup'
@@ -215,20 +218,39 @@ setupRouter.post('/setup', async (c) => {
   ])
 
   // 6. Create session in sessions table
+  const maxAge = getSessionMaxAge(c.env)
   const token = await signSession(adminUser.id, c.env.AUTH_SECRET)
   const sessionId = crypto.randomUUID()
-  const expiresAt = now + 30 * 24 * 60 * 60 * 1000 // 30 days
-  await db.insert(schema.sessions).values({
-    id: sessionId,
-    userId: adminUser.id,
-    token,
-    expiresAt,
-    createdAt: now,
-  })
+  const expiresAt = now + maxAge * 1000
+  await db
+    .insert(schema.sessions)
+    .values({
+      id: sessionId,
+      userId: adminUser.id,
+      token,
+      expiresAt,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: schema.sessions.token,
+      set: { expiresAt, createdAt: now },
+    })
+
+  // Clear any past revoked status for this token or user
+  await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_session:${token}`)).catch(() => {})
+  await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_user:${adminUser.id}`)).catch(() => {})
 
   // 7. Set session cookie and redirect to /
-  const cookie = createSessionCookie(token)
+  const cookie = createSessionCookie(token, maxAge)
+  const clearLoggedOut = createClearLoggedOutCookie()
+
+  c.header('Set-Cookie', cookie)
+  c.header('Set-Cookie', clearLoggedOut, { append: true })
+
   if (isJson) {
+    const resHeaders = new Headers()
+    resHeaders.set('Set-Cookie', cookie)
+    resHeaders.append('Set-Cookie', clearLoggedOut)
     return c.json(
       {
         status: 'ok',
@@ -243,10 +265,9 @@ setupRouter.post('/setup', async (c) => {
         },
       },
       200,
-      { 'Set-Cookie': cookie },
+      resHeaders as any,
     )
   }
 
-  c.header('Set-Cookie', cookie)
   return c.redirect('/', 302)
 })

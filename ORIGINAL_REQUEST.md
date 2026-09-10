@@ -229,3 +229,44 @@ Integrity mode: development
 ### Verification & Quality
 - [ ] `npm run typecheck` exits with status 0 and zero TypeScript errors.
 - [ ] `npm test` executes all test suites against local Cloudflare D1 and passes 100% of test cases.
+
+## 2026-09-10T03:55:11Z
+
+This is a single self-contained fix; keep it small and focused.
+
+Review and fix the sign-in and session security issues in the TripleT-Rocketry web application where users appear to remain authenticated or continue using the site after signing out, and sessions never appear to expire.
+
+Working directory: /home/matt/Code/TripleT-Rocketry
+Integrity mode: development
+
+## Requirements
+
+### R1. Server-Side Session Invalidation on Sign-Out
+Ensure that signing out invalidates the session on both client and server:
+- The session record or token must be explicitly revoked or deleted server-side so it can never be used again.
+- All session authentication cookies must be properly cleared/expired in the response.
+- Any subsequent requests using previously valid session credentials must be rejected.
+
+### R2. Session Expiration & Lifecycle Enforcement
+Implement and enforce session expiration:
+- Sessions must have a defined expiration lifetime (absolute timeout and/or idle timeout).
+- Authentication middleware and session verification logic must validate that the session is neither expired nor revoked on protected endpoints.
+- Expired sessions must be rejected, prompting re-authentication.
+
+### R3. Automated Regression Verification
+Add automated tests covering the session security lifecycle using the existing Vitest test suite:
+- Verification that signing out immediately renders the session token/cookie invalid for protected routes.
+- Verification that expired sessions cannot access protected routes.
+- Verification that standard legitimate sessions remain functional within their validity window.
+
+## Acceptance Criteria
+
+### Security & Functional Criteria
+- [ ] Calling the sign-out endpoint revokes the session server-side and clears session cookies.
+- [ ] Requests to protected routes using a signed-out session cookie/token receive a 401 Unauthorized response (or redirect to sign-in).
+- [ ] Requests to protected routes using an expired session receive a 401 Unauthorized response (or redirect to sign-in).
+- [ ] Legitimate active sessions can access authorized endpoints without disruption.
+
+### Verification Criteria
+- [ ] `npm test` runs and all tests pass (including new session invalidation and expiration tests).
+- [ ] `npm run typecheck` passes with zero TypeScript errors.
