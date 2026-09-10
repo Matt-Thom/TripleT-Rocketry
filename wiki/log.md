@@ -72,3 +72,4 @@ Append-only log of wiki operations.
 - 2026-09-03 WRITE: issues.md — port findings (missing cited wiki pages, placeholder overview, legacy .env credential mismatch)
 - 2026-09-03 WRITE: concept cloudflare-deployment — bound hostnames rocketry.thom.au (production) and rocketry-dev.thom.au (staging)
 - 2026-09-04 WRITE: Phase 1 Web UI, Component Inventory, and Regulatory Chain-of-Custody Tracking (migration 0001, services/compliance.ts, routes/inventory.ts, views/inventory.ts)
+- 2026-09-10 WRITE: concept security-testing (threat model, trust boundaries, six identity sources in src/middleware/auth.ts, adversary model) — supports docs/security-testing-process.md

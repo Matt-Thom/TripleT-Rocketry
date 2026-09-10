@@ -38,6 +38,24 @@ npm test
 npm run typecheck
 ```
 
+## Security
+
+Every release must pass the nine security gates in
+[`docs/security-testing-process.md`](docs/security-testing-process.md) —
+secret and dependency scanning, static analysis, an automated security
+regression suite, deployed-configuration verification, an authenticated
+dynamic scan against staging, and a manual review by someone other than the
+change's author.
+
+The current state of the application against that process, including the open
+findings the suite is being built to close, is in
+[`docs/security-baseline-2026-09.md`](docs/security-baseline-2026-09.md). The
+threat model behind it is
+[`wiki/concepts/security-testing.md`](wiki/concepts/security-testing.md).
+
+To report a vulnerability, see [`SECURITY.md`](SECURITY.md). Report privately;
+do not open a public issue.
+
 ## Database changes
 
 `src/db/schema.ts` is the source of truth. After editing it:
