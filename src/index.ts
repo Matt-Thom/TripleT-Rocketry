@@ -12,6 +12,7 @@ import { html } from 'hono/html'
 import { log, type TraceContext } from './logging'
 import type { ActiveFlyer } from './db/context'
 import { authMiddleware } from './middleware/auth'
+import { csrfMiddleware } from './middleware/csrf'
 import { authRouter } from './routes/auth'
 import { setupRouter } from './routes/setup'
 import { adminRouter } from './routes/admin'
@@ -68,8 +69,14 @@ app.use('*', async (c, next) => {
 })
 
 /**
+ * CSRF defense middleware checking Origin and Referer on state-changing methods (BL-07).
+ */
+app.use('*', csrfMiddleware)
+
+/**
  * Authentication & multi-user session middleware across the application.
  */
+
 app.use('*', authMiddleware)
 
 /**
