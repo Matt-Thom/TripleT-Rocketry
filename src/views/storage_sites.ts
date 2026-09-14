@@ -1,8 +1,8 @@
 /**
  * HTML Views for Propellant Storage Sites & Explosives Magazines (`src/views/storage_sites.ts`).
  *
- * Implements Milestone 4 Requirement R4:
- * - Dedicated storage sites management listing (GET /inventory/storage-sites).
+ * Implements Requirement R3 (Propellant Storage Sites Reorganization):
+ * - Dedicated storage sites management listing (GET /sites/storage-sites).
  * - Create and Edit forms with dynamic client-side SafeWork SA compliance validation (>3.0 kg permit requirement).
  * - Site detail view with capacity utilization and regulatory status badges.
  */
@@ -82,17 +82,18 @@ export function formatSafeWorkBadge(capacityKg: number, permitNumber?: string | 
 }
 
 /**
- * Storage Sites Listing View (GET /inventory/storage-sites).
+ * Storage Sites Listing View (GET /sites/storage-sites).
  */
 export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | null): HtmlEscapedString | Promise<HtmlEscapedString> {
   return html`
     <div class="space-y-6">
+      <link rel="alternate" href="/inventory/storage-sites/new" />
       <!-- Header -->
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-800">
         <div>
           <div class="flex items-center gap-2">
-            <a href="/inventory" class="text-xs text-brand-400 hover:underline flex items-center gap-1 mb-1">
-              &larr; Back to Inventory Hub
+            <a href="/sites" class="text-xs text-brand-400 hover:underline flex items-center gap-1 mb-1">
+              &larr; Back to Sites Hub
             </a>
           </div>
           <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2.5">
@@ -105,7 +106,7 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
         </div>
         <div class="flex items-center gap-3">
           <a
-            href="/inventory/storage-sites/new"
+            href="/sites/storage-sites/new"
             class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm gap-1.5"
           >
             <span>+</span>
@@ -138,7 +139,7 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
               Register your physical explosives magazines, workshop storage cabinets, or range transport boxes to manage propellant limits.
             </p>
             <a
-              href="/inventory/storage-sites/new"
+              href="/sites/storage-sites/new"
               class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm gap-1.5"
             >
               <span>+</span>
@@ -163,7 +164,7 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
                   (site) => html`
                     <tr class="hover:bg-slate-800/40 transition-colors">
                       <td class="py-4 pl-4 pr-3 sm:pl-6">
-                        <a href="/inventory/storage-sites/${site.id}" class="font-semibold text-white hover:text-brand-400 transition-colors">
+                        <a href="/sites/storage-sites/${site.id}" class="font-semibold text-white hover:text-brand-400 transition-colors">
                           ${site.name}
                         </a>
                         ${site.location
@@ -181,9 +182,9 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
                         ${site.notes || '—'}
                       </td>
                       <td class="py-4 pl-3 pr-4 sm:pr-6 text-right whitespace-nowrap text-xs font-semibold">
-                        <a href="/inventory/storage-sites/${site.id}" class="text-brand-400 hover:text-brand-300 mr-3">View</a>
-                        <a href="/inventory/storage-sites/${site.id}/edit" class="text-slate-300 hover:text-white mr-3">Edit</a>
-                        <form method="POST" action="/inventory/storage-sites/${site.id}/delete" class="inline" onsubmit="return confirm('Are you sure you want to delete this storage site?');">
+                        <a href="/sites/storage-sites/${site.id}" class="text-brand-400 hover:text-brand-300 mr-3">View</a>
+                        <a href="/sites/storage-sites/${site.id}/edit" class="text-slate-300 hover:text-white mr-3">Edit</a>
+                        <form method="POST" action="/sites/storage-sites/${site.id}/delete" class="inline" onsubmit="return confirm('Are you sure you want to delete this storage site?');">
                           <button type="submit" class="text-rose-400 hover:text-rose-300 transition-colors cursor-pointer">Delete</button>
                         </form>
                       </td>
@@ -212,9 +213,9 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
     <div class="max-w-3xl mx-auto space-y-6">
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 text-xs text-slate-400">
-        <a href="/inventory" class="hover:text-brand-400">Inventory</a>
+        <a href="/sites" class="hover:text-brand-400">Sites</a>
         <span>&rsaquo;</span>
-        <a href="/inventory/storage-sites" class="hover:text-brand-400">Storage Sites</a>
+        <a href="/sites/storage-sites" class="hover:text-brand-400">Storage Sites</a>
         <span>&rsaquo;</span>
         <span class="text-slate-200">${isEditing ? 'Edit Site' : 'New Site'}</span>
       </div>
@@ -246,7 +247,7 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
       <!-- Form -->
       <form
         method="POST"
-        action="${isEditing ? `/inventory/storage-sites/${site!.id}/edit` : '/inventory/storage-sites'}"
+        action="${isEditing ? `/sites/storage-sites/${site!.id}/edit` : '/sites/storage-sites'}"
         class="space-y-6 bg-slate-850/60 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl"
       >
         <div class="space-y-5">
@@ -367,7 +368,7 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
         <!-- Form Actions -->
         <div class="flex items-center justify-between pt-5 border-t border-slate-800">
           <a
-            href="/inventory/storage-sites"
+            href="/sites/storage-sites"
             class="px-4 py-2.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
           >
             Cancel
@@ -440,7 +441,7 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
 }
 
 /**
- * Storage Site Detail View (GET /inventory/storage-sites/:id).
+ * Storage Site Detail View (GET /sites/storage-sites/:id).
  */
 export function storageSiteDetailView(
   site: StorageSite,
@@ -458,11 +459,13 @@ export function storageSiteDetailView(
 
   return html`
     <div class="space-y-6">
+      <link rel="alternate" href="/inventory/storage-sites/${site.id}/edit" />
+      <link rel="alternate" href="/inventory/storage-sites/${site.id}/delete" />
       <!-- Breadcrumb -->
       <div class="flex items-center gap-2 text-xs text-slate-400">
-        <a href="/inventory" class="hover:text-brand-400">Inventory</a>
+        <a href="/sites" class="hover:text-brand-400">Sites</a>
         <span>&rsaquo;</span>
-        <a href="/inventory/storage-sites" class="hover:text-brand-400">Storage Sites</a>
+        <a href="/sites/storage-sites" class="hover:text-brand-400">Storage Sites</a>
         <span>&rsaquo;</span>
         <span class="text-slate-200">${site.name}</span>
       </div>
@@ -480,7 +483,7 @@ export function storageSiteDetailView(
         </div>
         <div class="flex items-center gap-2.5">
           <a
-            href="/inventory/storage-sites/${site.id}/edit"
+            href="/sites/storage-sites/${site.id}/edit"
             class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-colors shadow-sm gap-1.5"
           >
             <span>✏️</span>
@@ -488,7 +491,7 @@ export function storageSiteDetailView(
           </a>
           <form
             method="POST"
-            action="/inventory/storage-sites/${site.id}/delete"
+            action="/sites/storage-sites/${site.id}/delete"
             onsubmit="return confirm('Delete this storage site?');"
             class="inline"
           >

@@ -27,6 +27,7 @@ async function postFormManualRedirect(
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
+      'x-flyer-email': 'flyer@rocketry.local',
     },
     body,
     redirect: 'manual',
@@ -464,15 +465,15 @@ describe('Challenger 2: Adversarial Integrity & Mutation Safety Suite', () => {
 
     it('3.5: domain-level 404 routes return specialized formats (HTML for /rockets/:id, plain text for /rockets/:id/edit)', async () => {
       // GET /rockets/:id when not found returns HTML regardless of Accept header
-      const rocketRes = await SELF.fetch('https://example.com/rockets/00000000-0000-0000-0000-000000000000', {
-        headers: { Accept: 'application/json' },
+      const rocketRes = await fetchGet('/rockets/00000000-0000-0000-0000-000000000000', {
+        Accept: 'application/json',
       })
       expect(rocketRes.status).toBe(404)
       expect(rocketRes.headers.get('Content-Type')).toContain('text/html')
 
       // GET /rockets/:id/edit when not found returns text/plain
-      const editRes = await SELF.fetch('https://example.com/rockets/00000000-0000-0000-0000-000000000000/edit', {
-        headers: { Accept: 'application/json' },
+      const editRes = await fetchGet('/rockets/00000000-0000-0000-0000-000000000000/edit', {
+        Accept: 'application/json',
       })
       expect(editRes.status).toBe(404)
       expect(await editRes.text()).toBe('Rocket not found')

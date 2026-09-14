@@ -227,6 +227,7 @@ describe('Adversarial Challenger: Milestone 3 Site Creation & Form Preservation 
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'JSON Site Non-Redirect Test',
@@ -546,6 +547,7 @@ describe('Adversarial Challenger: Milestone 3 Site Creation & Form Preservation 
             headers: {
               'Content-Type': 'application/json',
               Accept: 'application/json',
+              'x-flyer-email': 'flyer@rocketry.local',
             },
             body: JSON.stringify(payload),
           }),
@@ -623,6 +625,7 @@ describe('Adversarial Challenger: Milestone 3 Site Creation & Form Preservation 
             headers: {
               'Content-Type': 'application/json',
               Accept: 'application/json',
+              'x-flyer-email': 'flyer@rocketry.local',
             },
             body: JSON.stringify(payload),
           }),
@@ -661,6 +664,7 @@ describe('Adversarial Challenger: Milestone 3 Site Creation & Form Preservation 
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Coober Pedy Desert Field',

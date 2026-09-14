@@ -86,6 +86,7 @@ describe('Adversarial Challenger: M3 Launch Events Plain Text Duty Officers & Ra
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Multi-Shift Launch Meet (Shift 2)',
@@ -128,6 +129,7 @@ describe('Adversarial Challenger: M3 Launch Events Plain Text Duty Officers & Ra
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Multi-Shift Launch Meet (De-staffed)',
@@ -218,7 +220,7 @@ describe('Adversarial Challenger: M3 Launch Events Plain Text Duty Officers & Ra
       // Now clear ONLY LCO via JSON PUT while keeping RSO
       const res2 = await SELF.fetch(`https://example.com/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({
           name: 'Asymmetric Shift Meet',
           launch_site_id: site.id,
@@ -613,7 +615,7 @@ describe('Adversarial Challenger: M3 Launch Events Plain Text Duty Officers & Ra
       // Phase 3: Evening Shift Change (Event updated via JSON PUT /events/:id)
       const update2 = await SELF.fetch(`https://example.com/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({
           name: 'Continuous Operations Meet',
           launch_site_id: site.id,

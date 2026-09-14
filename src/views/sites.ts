@@ -63,13 +63,22 @@ export function sitesListView(sites: LaunchSite[], user?: ActiveFlyer | null): H
             Registered launch facilities, GPS coordinates, and CASA airspace approval altitude ceilings.
           </p>
         </div>
-        <a
-          href="/sites/new"
-          class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm self-start sm:self-auto"
-        >
-          <span class="text-base leading-none font-bold">+</span>
-          <span>Add Launch Site</span>
-        </a>
+        <div class="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+          <a
+            href="/sites/storage-sites"
+            class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-lg border border-slate-700 transition-colors shadow-sm"
+          >
+            <span>🏰</span>
+            <span>Propellant Storage & Magazines</span>
+          </a>
+          <a
+            href="/sites/new"
+            class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
+          >
+            <span class="text-base leading-none font-bold">+</span>
+            <span>Add Launch Site</span>
+          </a>
+        </div>
       </div>
 
       <!-- Sites Grid / List -->
@@ -81,7 +90,14 @@ export function sitesListView(sites: LaunchSite[], user?: ActiveFlyer | null): H
               <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
                 No launch fields have been added yet. Register your club field or launch site to set CASA ceilings and schedule events.
               </p>
-              <div class="mt-6">
+              <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <a
+                  href="/sites/storage-sites"
+                  class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-lg border border-slate-700 transition-colors shadow-sm"
+                >
+                  <span>🏰</span>
+                  <span>Propellant Storage & Magazines</span>
+                </a>
                 <a
                   href="/sites/new"
                   class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"

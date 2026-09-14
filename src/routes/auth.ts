@@ -158,6 +158,26 @@ function generateWebAuthnChallenge(): string {
 }
 
 /**
+ * Sanitize redirect targets to prevent open redirect vulnerabilities.
+ * Disallows external schemes, protocol-relative URLs (//), and backslash escapes (/\ or \\).
+ */
+export function sanitizeRedirect(url: unknown, fallback: string = '/'): string {
+  if (typeof url !== 'string' || !url.trim()) {
+    return fallback
+  }
+  const clean = url.trim()
+  if (
+    clean.startsWith('/') &&
+    !clean.startsWith('//') &&
+    !clean.startsWith('/\\') &&
+    !clean.includes('\\')
+  ) {
+    return clean
+  }
+  return fallback
+}
+
+/**
  * GET /login - Render clean login form.
  */
 authRouter.get('/login', async (c) => {
@@ -166,8 +186,7 @@ authRouter.get('/login', async (c) => {
   // Clean up any legacy demo pilots from D1
   await cleanupDemoPilots(db).catch(() => {})
 
-  const rawRedirect = c.req.query('redirect') || '/'
-  const redirectUrl = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
+  const redirectUrl = sanitizeRedirect(c.req.query('redirect'), '/')
   const error = c.req.query('error') || null
 
   const view = loginView({ redirectUrl, error })
@@ -175,7 +194,7 @@ authRouter.get('/login', async (c) => {
     title: 'Sign In',
     activeTab: 'dashboard',
     content: view,
-    user: (c.get as any)('user') || null,
+    user: null,
   })
 
   return c.html(html)
@@ -194,14 +213,12 @@ authRouter.post('/login', async (c) => {
     const json = await c.req.json().catch(() => ({}))
     email = typeof json.email === 'string' ? json.email.trim().toLowerCase() : ''
     password = typeof json.password === 'string' ? json.password : ''
-    const reqRedirect = typeof json.redirect === 'string' ? json.redirect : '/'
-    redirectUrl = reqRedirect.startsWith('/') && !reqRedirect.startsWith('//') ? reqRedirect : '/'
+    redirectUrl = sanitizeRedirect(json.redirect, '/')
   } else {
     const body = await c.req.parseBody()
     email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
     password = typeof body.password === 'string' ? body.password : ''
-    const reqRedirect = typeof body.redirect === 'string' && body.redirect ? body.redirect : '/'
-    redirectUrl = reqRedirect.startsWith('/') && !reqRedirect.startsWith('//') ? reqRedirect : '/'
+    redirectUrl = sanitizeRedirect(body.redirect, '/')
   }
 
   if (!email || !password) {
@@ -273,8 +290,7 @@ authRouter.post('/login', async (c) => {
  * GET /register - Render registration page.
  */
 authRouter.get('/register', (c) => {
-  const rawRedirect = c.req.query('redirect') || '/'
-  const redirectUrl = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
+  const redirectUrl = sanitizeRedirect(c.req.query('redirect'), '/')
   const error = c.req.query('error') || null
 
   const view = registerView({ redirectUrl, error })
@@ -282,7 +298,7 @@ authRouter.get('/register', (c) => {
     title: 'Register Profile',
     activeTab: 'dashboard',
     content: view,
-    user: (c.get as any)('user') || null,
+    user: null,
   })
 
   return c.html(html)
@@ -309,8 +325,7 @@ authRouter.post('/register', async (c) => {
     certifyingBody = json.certifyingBody === 'NAR' ? 'NAR' : 'TRA'
     level = Number(json.level || 0)
     certNumber = typeof json.certNumber === 'string' ? json.certNumber.trim() : ''
-    const reqRedirect = typeof json.redirect === 'string' ? json.redirect : '/'
-    redirectUrl = reqRedirect.startsWith('/') && !reqRedirect.startsWith('//') ? reqRedirect : '/'
+    redirectUrl = sanitizeRedirect(json.redirect, '/')
   } else {
     const body = await c.req.parseBody()
     displayName = typeof body.displayName === 'string' ? body.displayName.trim() : ''
@@ -319,8 +334,7 @@ authRouter.post('/register', async (c) => {
     certifyingBody = body.certifyingBody === 'NAR' ? 'NAR' : 'TRA'
     level = Number(body.level || 0)
     certNumber = typeof body.certNumber === 'string' ? body.certNumber.trim() : ''
-    const reqRedirect = typeof body.redirect === 'string' && body.redirect ? body.redirect : '/'
-    redirectUrl = reqRedirect.startsWith('/') && !reqRedirect.startsWith('//') ? reqRedirect : '/'
+    redirectUrl = sanitizeRedirect(body.redirect, '/')
   }
 
   if (!displayName || !email || !password) {
@@ -574,14 +588,7 @@ const handleLogout = async (c: any) => {
     return c.json({ status: 'ok', message: 'Logged out' }, 200, headers as any)
   }
 
-  const rawRedirect = c.req.query('redirect') || '/login'
-  const redirectUrl =
-    rawRedirect.startsWith('/') &&
-    !rawRedirect.startsWith('//') &&
-    !rawRedirect.startsWith('/\\') &&
-    !rawRedirect.includes('\\')
-      ? rawRedirect
-      : '/login'
+  const redirectUrl = sanitizeRedirect(c.req.query('redirect'), '/login')
   headers.set('Location', redirectUrl)
   if (isHtmx) {
     headers.set('HX-Redirect', redirectUrl)
@@ -614,6 +621,15 @@ authRouter.post('/auth/sign-out', handleLogout)
  * POST /auth/switch/:id - Convenience quick-switch for authenticated flyer accounts.
  */
 authRouter.post('/auth/switch/:id', async (c) => {
+  const currentUser = (c.get as any)('user')
+  if (!currentUser) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      return c.redirect('/login', 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+
   const id = c.req.param('id')
   const db = drizzle(c.env.DB, { schema })
 
@@ -653,8 +669,7 @@ authRouter.post('/auth/switch/:id', async (c) => {
 
   const cookie = createSessionCookie(token, maxAge)
   const clearLoggedOut = createClearLoggedOutCookie()
-  const rawRedirect = c.req.query('redirect') || '/'
-  const redirectUrl = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
+  const redirectUrl = sanitizeRedirect(c.req.query('redirect'), '/')
 
   c.header('Set-Cookie', cookie)
   c.header('Set-Cookie', clearLoggedOut, { append: true })

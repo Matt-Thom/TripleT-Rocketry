@@ -80,6 +80,21 @@ app.route('/', setupRouter)
 app.route('/admin', adminRouter)
 
 /**
+ * Legacy Storage Sites root redirects (Requirement R3.2)
+ * Preserves query parameters and forwards to /sites/storage-sites
+ */
+app.get('/storage-sites', (c) => {
+  const search = new URL(c.req.url, 'http://localhost').search
+  return c.redirect('/sites/storage-sites' + search, 301)
+})
+app.get('/storage-sites/*', (c) => {
+  const search = new URL(c.req.url, 'http://localhost').search
+  let sub = c.req.path.slice('/storage-sites'.length)
+  if (sub === '/') sub = ''
+  return c.redirect('/sites/storage-sites' + sub + search, 301)
+})
+
+/**
  * Mount all domain sub-routers
  */
 app.route('/', dashboardRouter)

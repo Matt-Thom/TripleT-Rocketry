@@ -24,6 +24,7 @@ import { pageLayout } from '../views/layout'
 import {
   editConfigFormView,
   editRocketFormView,
+  importRocketFormView,
   newConfigFormView,
   newRocketFormView,
   rocketDetailView,
@@ -31,6 +32,7 @@ import {
   type RocketConfigSummary,
   type RocketListItem,
 } from '../views/rockets'
+import { parseOrkArchive, OrkParseError, type ParsedOrkData } from '../services/ork_parser'
 
 type Bindings = {
   DB: D1Database
@@ -173,6 +175,195 @@ rocketsRouter.get('/new', async (c) => {
   return c.html(fullHtml, 200, {
     'Content-Type': 'text/html; charset=utf-8',
   })
+})
+
+/**
+ * GET /rockets/import
+ * Renders the OpenRocket (.ork) file import form.
+ */
+rocketsRouter.get('/import', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const content = importRocketFormView()
+
+  const fullHtml = pageLayout({
+    title: 'Import OpenRocket Design',
+    activeTab: 'rockets',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+})
+
+/**
+ * POST /rockets/import
+ * Handles OpenRocket (.ork) archive file uploads.
+ * Parses the internal rocket.xml, extracts airframe and stage specifications,
+ * and persists a new rocket and configuration snapshot v1 in D1.
+ */
+rocketsRouter.post('/import', async (c) => {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+
+  const acceptHeader = c.req.header('Accept') || ''
+  const isJsonRequest =
+    acceptHeader.includes('application/json') ||
+    (c.req.header('Content-Type') || '').includes('application/json')
+
+  // Check Content-Length for fast oversized rejection
+  const contentLength = Number(c.req.header('Content-Length'))
+  if (contentLength && contentLength > 10 * 1024 * 1024) {
+    const errorMsg = 'File exceeds maximum allowed size of 10 MB.'
+    if (isJsonRequest) {
+      return c.json({ error: 'Payload Too Large', message: errorMsg }, 413)
+    }
+    const content = importRocketFormView(errorMsg)
+    return c.html(
+      pageLayout({
+        title: 'Import OpenRocket Design',
+        activeTab: 'rockets',
+        content,
+        user: flyer,
+      }),
+      413,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  let file: File | null = null
+  let filename = 'rocket.ork'
+
+  try {
+    const body = await c.req.parseBody()
+    const uploaded = body['file'] ?? body['ork_file'] ?? body['orkFile']
+    if (uploaded instanceof File) {
+      file = uploaded
+      filename = uploaded.name || filename
+    }
+  } catch (err: unknown) {
+    const errorMsg = 'Invalid form submission.'
+    if (isJsonRequest) {
+      return c.json({ error: 'Bad Request', message: errorMsg }, 400)
+    }
+    const content = importRocketFormView(errorMsg)
+    return c.html(
+      pageLayout({
+        title: 'Import OpenRocket Design',
+        activeTab: 'rockets',
+        content,
+        user: flyer,
+      }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  if (!file || file.size === 0) {
+    const errorMsg = 'Please select an OpenRocket (.ork) file to upload.'
+    if (isJsonRequest) {
+      return c.json({ error: 'Bad Request', message: errorMsg }, 400)
+    }
+    const content = importRocketFormView(errorMsg)
+    return c.html(
+      pageLayout({
+        title: 'Import OpenRocket Design',
+        activeTab: 'rockets',
+        content,
+        user: flyer,
+      }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    const errorMsg = 'File exceeds maximum allowed size of 10 MB.'
+    if (isJsonRequest) {
+      return c.json({ error: 'Payload Too Large', message: errorMsg }, 413)
+    }
+    const content = importRocketFormView(errorMsg)
+    return c.html(
+      pageLayout({
+        title: 'Import OpenRocket Design',
+        activeTab: 'rockets',
+        content,
+        user: flyer,
+      }),
+      413,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  let parsed: ParsedOrkData
+  try {
+    const buffer = await file.arrayBuffer()
+    parsed = await parseOrkArchive(buffer, filename)
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to parse OpenRocket file.'
+    if (isJsonRequest) {
+      return c.json({ error: 'Bad Request', message: errorMsg }, 400)
+    }
+    const content = importRocketFormView(errorMsg)
+    return c.html(
+      pageLayout({
+        title: 'Import OpenRocket Design',
+        activeTab: 'rockets',
+        content,
+        user: flyer,
+      }),
+      400,
+      { 'Content-Type': 'text/html; charset=utf-8' },
+    )
+  }
+
+  // Persist into SQLite D1 via Drizzle ORM
+  const [newRocket] = await db
+    .insert(schema.rockets)
+    .values({
+      ownerId: flyer.id,
+      name: parsed.name,
+      status: 'flight_ready',
+      lengthMm: parsed.lengthMm,
+      bodyDiameterMm: parsed.bodyDiameterMm,
+      createdBy: flyer.id,
+    })
+    .returning()
+
+  const [newConfig] = await db
+    .insert(schema.rocketConfigurations)
+    .values({
+      rocketId: newRocket.id,
+      version: 1,
+      isCurrent: true,
+      airframeMaterial: parsed.airframeMaterial,
+      finCount: parsed.finCount,
+      dryMassG: parsed.dryMassG,
+      recoveryType: parsed.recoveryType,
+      parachuteSizeMm: parsed.parachuteSizeMm,
+      motorMountDiameterMm: parsed.motorMountDiameterMm,
+      lengthMm: parsed.lengthMm,
+      bodyDiameterMm: parsed.bodyDiameterMm,
+      notes: parsed.notes,
+      createdBy: flyer.id,
+    })
+    .returning()
+
+  if (isJsonRequest) {
+    return c.json(
+      {
+        success: true,
+        rocket: newRocket,
+        configuration: newConfig,
+      },
+      201,
+    )
+  }
+
+  return c.redirect(`/rockets/${newRocket.id}`, 303)
 })
 
 /**

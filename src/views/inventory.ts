@@ -115,7 +115,7 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
         </div>
         <div class="flex flex-wrap items-center gap-2.5">
           <a
-            href="/inventory/storage-sites"
+            href="/sites/storage-sites"
             class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-700 transition-colors shadow-sm gap-1.5"
           >
             <span>🏰</span>
@@ -251,19 +251,48 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
         ${['all', 'motors'].includes(activeFilter)
           ? html`
               <div class="rounded-xl bg-slate-900/60 border border-slate-800 overflow-hidden shadow">
-                <div class="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+                <div class="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-2">
                     <span class="text-base">⚡</span>
                     <h2 class="text-sm font-bold text-white uppercase tracking-wider">Rocket Motors & Propellant</h2>
+                    <span class="text-xs text-slate-400">${motors.length} configured motor entries</span>
                   </div>
-                  <span class="text-xs text-slate-400">${motors.length} configured motor entries</span>
+                  <div class="flex items-center gap-2">
+                    <form
+                      id="motor-batch-delete-form"
+                      action="/inventory/motors/batch-delete"
+                      method="POST"
+                      class="inline-flex items-center"
+                      onsubmit="return confirm('Are you sure you want to remove the selected motor inventory items? Motors with flight logs or transaction history will be recorded as regulatory disposal.');"
+                    >
+                      <button
+                        type="submit"
+                        id="batch-delete-btn"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800/60 transition-colors shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled
+                        title="Delete selected motors"
+                      >
+                        <span>🗑️</span>
+                        <span>Delete Selected</span>
+                        <span id="selected-count-badge" class="ml-1 px-1.5 py-0.2 bg-red-800/60 rounded text-[10px] hidden font-mono">0</span>
+                      </button>
+                    </form>
+                  </div>
                 </div>
 
                 <div class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-slate-800 text-left text-sm">
                     <thead class="bg-slate-950/40 text-xs uppercase font-semibold text-slate-400">
                       <tr>
-                        <th class="py-3 pl-4 pr-3 sm:pl-6">Motor Model</th>
+                        <th class="py-3 pl-4 pr-2 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            id="select-all-motors"
+                            title="Select all motors"
+                            class="rounded border-slate-700 bg-slate-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                          />
+                        </th>
+                        <th class="py-3 pl-2 pr-3 sm:pl-3">Motor Model</th>
                         <th class="px-3 py-3">Impulse</th>
                         <th class="px-3 py-3">Stock on Hand</th>
                         <th class="px-3 py-3">Used / Fired</th>
@@ -276,7 +305,7 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                       ${motors.length === 0
                         ? html`
                             <tr>
-                              <td colspan="7" class="py-6 text-center text-slate-500 italic">
+                              <td colspan="8" class="py-6 text-center text-slate-500 italic">
                                 No motors currently tracked in your inventory.
                                 <a href="/motors" class="text-brand-400 hover:underline ml-1">Browse catalog to add motors →</a>
                               </td>
@@ -287,7 +316,17 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                             const classBadge = getImpulseClassBadgeClasses(motor.impulseClass)
                             return html`
                               <tr id="inventory-row-${item.id}" class="hover:bg-slate-800/40 transition-colors">
-                                <td class="py-3.5 pl-4 pr-3 sm:pl-6">
+                                <td class="py-3.5 pl-4 pr-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    name="selected_ids"
+                                    value="${item.id}"
+                                    form="motor-batch-delete-form"
+                                    class="motor-select-checkbox rounded border-slate-700 bg-slate-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                                    title="Select motor for batch actions"
+                                  />
+                                </td>
+                                <td class="py-3.5 pl-2 pr-3 sm:pl-3">
                                   <div class="font-semibold text-white">
                                     <a href="/motors/${item.motorId}" class="hover:text-brand-400 transition-colors">
                                       ${motor.manufacturer || 'Unknown'} <span class="font-mono text-brand-300">${motor.model || item.motorId}</span>
@@ -364,6 +403,21 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                   <div class="font-mono text-slate-500">${item.batchLotNumber ? `Lot: ${item.batchLotNumber}` : ''}</div>
                                 </td>
                                 <td class="py-3.5 pl-3 pr-4 sm:pr-6 text-right whitespace-nowrap">
+                                  <form
+                                    action="/inventory/motors/${item.id}/delete"
+                                    method="POST"
+                                    class="inline-block mr-2"
+                                    onsubmit="return confirm('Are you sure you want to remove this motor from inventory? Motors with flight logs or transaction history will be recorded as regulatory disposal.');"
+                                  >
+                                    <button
+                                      type="submit"
+                                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 transition-colors cursor-pointer"
+                                      title="Remove motor from inventory"
+                                    >
+                                      <span>🗑️</span>
+                                      <span>Delete</span>
+                                    </button>
+                                  </form>
                                   ${item.quantityOnHand <= 0
                                     ? html`
                                         <form
@@ -376,10 +430,9 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                         >
                                           <button
                                             type="submit"
-                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 transition-colors cursor-pointer"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-slate-400 hover:text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
                                             title="Dismiss zero-quantity motor from active inventory view"
                                           >
-                                            <span>🗑️</span>
                                             <span>Dismiss</span>
                                           </button>
                                         </form>
@@ -404,6 +457,50 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                     </tbody>
                   </table>
                 </div>
+
+                <script>
+                  (function() {
+                    const selectAll = document.getElementById('select-all-motors');
+                    const batchBtn = document.getElementById('batch-delete-btn');
+                    const countBadge = document.getElementById('selected-count-badge');
+                    const checkboxes = document.querySelectorAll('.motor-select-checkbox');
+
+                    function updateBatchState() {
+                      const checked = document.querySelectorAll('.motor-select-checkbox:checked');
+                      const count = checked.length;
+                      if (batchBtn) {
+                        batchBtn.disabled = count === 0;
+                      }
+                      if (countBadge) {
+                        countBadge.textContent = String(count);
+                        if (count > 0) {
+                          countBadge.classList.remove('hidden');
+                        } else {
+                          countBadge.classList.add('hidden');
+                        }
+                      }
+                      if (selectAll && checkboxes.length > 0) {
+                        selectAll.checked = count === checkboxes.length;
+                        selectAll.indeterminate = count > 0 && count < checkboxes.length;
+                      }
+                    }
+
+                    if (selectAll) {
+                      selectAll.addEventListener('change', function() {
+                        checkboxes.forEach(function(cb) {
+                          cb.checked = selectAll.checked;
+                        });
+                        updateBatchState();
+                      });
+                    }
+
+                    checkboxes.forEach(function(cb) {
+                      cb.addEventListener('change', updateBatchState);
+                    });
+
+                    updateBatchState();
+                  })();
+                </script>
               </div>
             `
           : ''}

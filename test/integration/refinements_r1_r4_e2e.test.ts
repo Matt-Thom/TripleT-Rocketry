@@ -291,6 +291,7 @@ describe('End-to-End Acceptance Suite: Usability & Domain Refinements (R1 - R4)'
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            'x-flyer-email': 'flyer@rocketry.local',
           },
           body: JSON.stringify({
             name: 'Renamed via JSON PUT API',

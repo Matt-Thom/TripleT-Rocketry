@@ -650,7 +650,7 @@ describe('Challenger M3: Adversarial Verification & Stress Testing', () => {
 
       const res = await SELF.fetch('https://example.com/motors/import', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'text/html' },
+        headers: { 'Content-Type': 'application/json', Accept: 'text/html', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({ csv_data: csvRow }),
       })
 
