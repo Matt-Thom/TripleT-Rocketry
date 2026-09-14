@@ -239,6 +239,7 @@ export function adminDashboardView(options: AdminDashboardViewOptions): HtmlEsca
                           type="button"
                           onclick="document.getElementById('edit-modal-${u.id}').classList.add('hidden')"
                           class="text-slate-400 hover:text-white text-lg"
+                          aria-label="Close edit modal"
                         >&times;</button>
                       </div>
 

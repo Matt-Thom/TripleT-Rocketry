@@ -669,6 +669,7 @@ export function inventoryRowFragment(item: InventoryItemWithMotor): HtmlEscapedS
             hx-swap="outerHTML"
             class="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold flex items-center justify-center border border-slate-700 transition-colors disabled:opacity-40"
             title="Decrease on-hand count"
+            aria-label="Decrease on-hand count"
             ${item.quantityOnHand <= 0 ? 'disabled' : ''}
           >
             -
@@ -684,6 +685,7 @@ export function inventoryRowFragment(item: InventoryItemWithMotor): HtmlEscapedS
             hx-swap="outerHTML"
             class="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold flex items-center justify-center border border-slate-700 transition-colors"
             title="Increase on-hand count"
+            aria-label="Increase on-hand count"
           >
             +
           </button>
