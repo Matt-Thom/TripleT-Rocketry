@@ -10,7 +10,6 @@ import { Hono } from 'hono'
 import { count, desc, eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import { dashboardView, type RecentFlightItem } from '../views/dashboard'
 import { pageLayout } from '../views/layout'
@@ -28,10 +27,16 @@ type Variables = {
 export const dashboardRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 dashboardRouter.get('/', async (c) => {
-  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      return c.redirect('/login', 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
 
-  // Ensure active flyer exists / is auto-seeded
-  await getActiveFlyer(db)
+  const db = drizzle(c.env.DB, { schema })
 
   // 1. Total flights count
   const [flightCountResult] = await db

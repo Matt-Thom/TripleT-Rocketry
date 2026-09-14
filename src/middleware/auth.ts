@@ -39,11 +39,14 @@ const PUBLIC_PATHS = [
   '/auth/logout',
   '/auth/signout',
   '/auth/sign-out',
+  '/auth/cf-access-login',
   '/health',
   '/ready',
   '/setup',
   '/auth/webauthn/login-options',
   '/auth/webauthn/login-verify',
+  '/static',
+  '/favicon.ico',
 ]
 
 export function isPublicPath(path: string): boolean {
@@ -346,8 +349,13 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
+  // If the user explicitly logged out, all ambient cookies and auto-login mechanisms are invalidated
+  if (hasLoggedOutMarker) {
+    invalidSession = true
+  }
+
   // 2. Cookie session with D1 server-side validation (checks all candidates if multiple triplet_session cookies are sent)
-  if (cookies.triplet_session !== undefined) {
+  if (!hasLoggedOutMarker && cookies.triplet_session !== undefined) {
     const candidateTokens = getAllCookieValues(rawCookieHeader, 'triplet_session')
     if (candidateTokens.length === 0) {
       invalidSession = true
@@ -374,8 +382,8 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 3. Cloudflare Access SSO header
-  if (!flyer) {
+  // 3. Cloudflare Access SSO header (strictly ignored if user is logged out or session is marked invalid)
+  if (!hasLoggedOutMarker && !invalidSession && !flyer) {
     const cfAccessEmail = c.req.header('cf-access-authenticated-user-email')?.trim()
     if (cfAccessEmail) {
       const [existing] = await db
@@ -438,8 +446,8 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 5. Direct developer / test flyer header (strictly guarded to test and local environments - BL-01)
-  if (isTestOrLocal && !flyer && !invalidSession) {
+  // 5. Direct developer / test flyer header (strictly guarded to test and local environments - BL-01, ignored if logged out)
+  if (isTestOrLocal && !hasLoggedOutMarker && !flyer && !invalidSession) {
     const headerUserId = c.req.header('x-flyer-id')
     const headerUserEmail = c.req.header('x-flyer-email')
     if (headerUserId) {
@@ -524,10 +532,10 @@ export async function authMiddleware(c: Context, next: Next) {
 
     if (acceptsHtml) {
       const headers = new Headers()
-      if (invalidSession || cookies.triplet_session !== undefined) {
+      if (invalidSession || hasLoggedOutMarker || cookies.triplet_session !== undefined) {
         headers.set('Set-Cookie', logoutCookie)
         headers.append('Set-Cookie', clearWebAuthn)
-        if (invalidSession) {
+        if (invalidSession || hasLoggedOutMarker) {
           headers.append('Set-Cookie', markerCookie)
         }
       }
@@ -542,10 +550,10 @@ export async function authMiddleware(c: Context, next: Next) {
 
     const headers = new Headers()
     headers.set('Content-Type', 'application/json')
-    if (invalidSession || cookies.triplet_session !== undefined) {
+    if (invalidSession || hasLoggedOutMarker || cookies.triplet_session !== undefined) {
       headers.set('Set-Cookie', logoutCookie)
       headers.append('Set-Cookie', clearWebAuthn)
-      if (invalidSession) {
+      if (invalidSession || hasLoggedOutMarker) {
         headers.append('Set-Cookie', markerCookie)
       }
     }

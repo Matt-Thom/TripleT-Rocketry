@@ -14,7 +14,6 @@ import { Hono } from 'hono'
 import { desc, asc, eq, sql, inArray, and, gt } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer } from '../db/context'
 import { evaluateSoftGates } from '../services/soft_gates'
 import type { TraceContext } from '../logging'
 import {
@@ -42,8 +41,11 @@ export const flightsRouter = new Hono<{ Bindings: Bindings; Variables: Variables
  * GET /flights — Flight Logbook List View
  */
 flightsRouter.get('/', async (c) => {
+  const activeFlyer = (c.get as any)('user')
+  if (!activeFlyer) {
+    return c.redirect('/login?redirect=%2Fflights', 302)
+  }
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   const flightRows = await db
     .select({
@@ -131,8 +133,11 @@ flightsRouter.get('/', async (c) => {
  * GET /flights/new — Flight Creation & Preflight Form
  */
 flightsRouter.get('/new', async (c) => {
+  const activeFlyer = (c.get as any)('user')
+  if (!activeFlyer) {
+    return c.redirect('/login?redirect=%2Fflights%2Fnew', 302)
+  }
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = await getActiveFlyer(db)
 
   const [rockets, configurations, motors, inventoryRows, launchSites, launchEvents, users] =
     await Promise.all([
@@ -270,6 +275,10 @@ flightsRouter.get('/new', async (c) => {
  * POST /flights/preflight-check — Dynamic HTMX Soft-Gate Evaluator
  */
 flightsRouter.post('/preflight-check', async (c) => {
+  const user = (c.get as any)('user')
+  if (!user) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
   const db = drizzle(c.env.DB, { schema })
   const body = await c.req.parseBody()
 
@@ -288,8 +297,7 @@ flightsRouter.post('/preflight-check', async (c) => {
       }
     }
   } else {
-    const activeFlyer = await getActiveFlyer(db)
-    flyerCertLevel = activeFlyer.maxCertLevel
+    flyerCertLevel = user.maxCertLevel || 0
   }
 
   // 2. Rocket configuration stability
@@ -379,8 +387,14 @@ flightsRouter.post('/preflight-check', async (c) => {
  * POST /flights — Flight Creation & Override Persistence
  */
 flightsRouter.post('/', async (c) => {
+  const activeFlyer = (c.get as any)('user')
+  if (!activeFlyer) {
+    if (c.req.header('accept')?.includes('application/json')) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    return c.redirect('/login', 302)
+  }
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = await getActiveFlyer(db)
   const body = await c.req.parseBody()
 
   // Flyer identity
@@ -840,9 +854,12 @@ flightsRouter.post('/', async (c) => {
  * GET /flights/:id/edit — Edit Flight Form View
  */
 flightsRouter.get('/:id/edit', async (c) => {
+  const activeFlyer = (c.get as any)('user')
+  if (!activeFlyer) {
+    return c.redirect('/login', 302)
+  }
   const db = drizzle(c.env.DB, { schema })
   const flightId = c.req.param('id')
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   const [flight] = await db
     .select()
@@ -1021,9 +1038,15 @@ flightsRouter.get('/:id/edit', async (c) => {
  * Helper to handle updating an existing flight record.
  */
 async function handleUpdateFlight(c: any) {
+  const activeFlyer = (c.get as any)('user')
+  if (!activeFlyer) {
+    if (c.req.header('accept')?.includes('application/json')) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+    return c.redirect('/login', 302)
+  }
   const db = drizzle(c.env.DB, { schema })
   const flightId = c.req.param('id')
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   const [existing] = await db
     .select()

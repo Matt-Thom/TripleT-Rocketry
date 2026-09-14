@@ -17,7 +17,6 @@ import { Hono } from 'hono'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import {
   inventoryRowFragment,
@@ -63,11 +62,29 @@ type Variables = {
 export const inventoryRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 /**
+ * Access control middleware: Enforce authenticated flyer across all /inventory routes.
+ */
+inventoryRouter.use('*', async (c, next) => {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      const targetUrl = encodeURIComponent(
+        c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+      )
+      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+  await next()
+})
+
+/**
  * List User Inventory Hub (GET /inventory).
  */
 export async function listInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const query = c.req.query()
   const filter = query.filter || 'all'
 
@@ -251,7 +268,7 @@ export async function listInventoryHandler(c: any) {
  */
 export async function addInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''
@@ -480,7 +497,7 @@ export async function adjustInventoryHandler(c: any) {
  */
 export async function dismissInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const id = c.req.param('id')
 
   if (!id) {
@@ -635,7 +652,7 @@ export async function processMotorDeletion(
  */
 export async function deleteMotorHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   const isJson =
     c.req.header('accept')?.includes('application/json') ||
@@ -726,7 +743,7 @@ function extractIdsFromPayload(body: any): string[] {
  */
 export async function batchDeleteMotorsHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   const isJson =
     c.req.header('accept')?.includes('application/json') ||
@@ -813,7 +830,7 @@ export async function batchDeleteMotorsHandler(c: any) {
  */
 export async function newComponentFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
   const content = addComponentFormView()
   const fullHtml = pageLayout({
     title: 'Add Component',
@@ -831,7 +848,7 @@ export async function newComponentFormHandler(c: any) {
  */
 export async function addComponentHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''
@@ -1018,7 +1035,7 @@ export async function adjustComponentHandler(c: any) {
  */
 export async function editComponentFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const id = c.req.param('id')
 
   const [comp] = await db
@@ -1049,7 +1066,7 @@ export async function editComponentFormHandler(c: any) {
  */
 export async function updateComponentHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const id = c.req.param('id')
 
   let body: any = {}
@@ -1115,7 +1132,7 @@ export async function updateComponentHandler(c: any) {
  */
 export async function custodyLedgerHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   const transactions = await db
     .select({
@@ -1189,7 +1206,7 @@ export async function custodyLedgerHandler(c: any) {
  */
 export async function newTransactionFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const query = c.req.query()
 
   const motorInvId = query.motor_inventory_id || query.motorInventoryId
@@ -1263,7 +1280,7 @@ export async function newTransactionFormHandler(c: any) {
  */
 export async function createTransactionHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''

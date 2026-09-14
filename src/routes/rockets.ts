@@ -18,7 +18,6 @@ import { html } from 'hono/html'
 import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import { pageLayout } from '../views/layout'
 import {
@@ -46,6 +45,24 @@ type Variables = {
 
 export const rocketsRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
+/**
+ * Access control middleware: Enforce authenticated flyer across all /rockets routes.
+ */
+rocketsRouter.use('*', async (c, next) => {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      const targetUrl = encodeURIComponent(
+        c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+      )
+      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+  await next()
+})
+
 function parseOptionalNumber(val: unknown): number | null {
   if (val === undefined || val === null) return null
   if (typeof val === 'string' && val.trim() === '') return null
@@ -72,7 +89,7 @@ type ValidRecovery = (typeof VALID_RECOVERY_TYPES)[number]
  */
 rocketsRouter.get('/', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   // Retrieve non-deleted rockets for active flyer
   const flyerRockets = await db
@@ -164,12 +181,14 @@ rocketsRouter.get('/', async (c) => {
  * Renders the new rocket form to establish airframe and baseline v1 snapshot.
  */
 rocketsRouter.get('/new', async (c) => {
+  const flyer = (c.get as any)('user')
   const content = newRocketFormView()
 
   const fullHtml = pageLayout({
     title: 'New Rocket Airframe',
     activeTab: 'rockets',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -183,7 +202,7 @@ rocketsRouter.get('/new', async (c) => {
  */
 rocketsRouter.get('/import', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   const content = importRocketFormView()
 
@@ -207,7 +226,7 @@ rocketsRouter.get('/import', async (c) => {
  */
 rocketsRouter.post('/import', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   const acceptHeader = c.req.header('Accept') || ''
   const isJsonRequest =
@@ -373,7 +392,7 @@ rocketsRouter.post('/import', async (c) => {
  */
 rocketsRouter.post('/', async (c) => {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   const body = await c.req.parseBody()
 
@@ -385,6 +404,7 @@ rocketsRouter.post('/', async (c) => {
         title: 'New Rocket Airframe',
         activeTab: 'rockets',
         content,
+        user: flyer,
       }),
       400,
       { 'Content-Type': 'text/html; charset=utf-8' },
@@ -560,10 +580,13 @@ rocketsRouter.get('/:id', async (c) => {
     ownerName,
   })
 
+  const flyer = (c.get as any)('user')
+
   const fullHtml = pageLayout({
     title: `${rocket.name} — Airframe Details`,
     activeTab: 'rockets',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -578,6 +601,7 @@ rocketsRouter.get('/:id', async (c) => {
 rocketsRouter.get('/:id/edit', async (c) => {
   const { id } = c.req.param()
   const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user')
 
   const [rocket] = await db
     .select()
@@ -594,6 +618,7 @@ rocketsRouter.get('/:id/edit', async (c) => {
     title: `Edit ${rocket.name}`,
     activeTab: 'rockets',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {
@@ -719,7 +744,7 @@ rocketsRouter.get('/:id/configurations/new', async (c) => {
 rocketsRouter.post('/:id/configurations', async (c) => {
   const { id } = c.req.param()
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   const [rocket] = await db
     .select()
@@ -871,12 +896,14 @@ rocketsRouter.get('/:id/configurations/:configId/edit', async (c) => {
       ),
     )
 
+  const flyer = (c.get as any)('user')
   const content = editConfigFormView(rocket, targetConfig, activeConfig || targetConfig)
 
   const fullHtml = pageLayout({
     title: `Edit Configuration Snapshot v${targetConfig.version} — ${rocket.name}`,
     activeTab: 'rockets',
     content,
+    user: flyer,
   })
 
   return c.html(fullHtml, 200, {

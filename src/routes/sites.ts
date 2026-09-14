@@ -16,7 +16,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
 import { pageLayout } from '../views/layout'
 import { sitesListView, siteDetailView, newSiteFormView, editSiteFormView } from '../views/sites'
-import { ensureAustralianLaunchSites, getActiveFlyer } from '../db/context'
+import { ensureAustralianLaunchSites } from '../db/context'
 import { storageSitesListView, storageSiteFormView, storageSiteDetailView } from '../views/storage_sites'
 
 type Bindings = {
@@ -26,6 +26,24 @@ type Bindings = {
 }
 
 const sites = new Hono<{ Bindings: Bindings }>()
+
+/**
+ * Access control middleware: Enforce authenticated flyer across all /sites routes.
+ */
+sites.use('*', async (c, next) => {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      const targetUrl = encodeURIComponent(
+        c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+      )
+      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+  await next()
+})
 
 /**
  * Helper to parse and normalize site form or JSON payload.
@@ -353,7 +371,7 @@ export async function parseStorageSiteInput(c: any) {
  */
 export async function listStorageSitesHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
 
   const storageSitesList = await db
@@ -389,7 +407,7 @@ export async function listStorageSitesHandler(c: any) {
  */
 export async function newStorageSiteFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
 
   const content = storageSiteFormView({
@@ -413,7 +431,7 @@ export async function newStorageSiteFormHandler(c: any) {
  */
 export async function createStorageSiteHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
 
   const input = await parseStorageSiteInput(c)
@@ -475,7 +493,7 @@ export async function createStorageSiteHandler(c: any) {
  */
 export async function viewStorageSiteHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
   const id = c.req.param('id')
 
@@ -581,7 +599,7 @@ export async function viewStorageSiteHandler(c: any) {
  */
 export async function editStorageSiteFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
   const id = c.req.param('id')
 
@@ -623,7 +641,7 @@ export async function editStorageSiteFormHandler(c: any) {
  */
 export async function updateStorageSiteHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
   const id = c.req.param('id')
 
@@ -703,7 +721,7 @@ export async function updateStorageSiteHandler(c: any) {
  */
 export async function deleteStorageSiteHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   if (!flyer) return c.redirect('/login')
   const id = c.req.param('id')
 
