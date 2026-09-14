@@ -26,6 +26,8 @@ import {
   inventoryHubView,
   addComponentFormView,
   editComponentFormView,
+  addMotorInventoryFormView,
+  adjustInventoryFormView,
   custodyLedgerView,
   recordTransactionFormView,
   getCategoryBadgeClasses,
@@ -402,6 +404,40 @@ export async function adjustInventoryHandler(c: any) {
     return c.text('<tr class="text-red-500"><td colspan="7">Inventory item not found</td></tr>', 404)
   }
 
+  // If GET request without adjust action parameters, render the full themed adjust page
+  if (c.req.method === 'GET' && !action && !field && query.delta === undefined) {
+    const [motor] = await db
+      .select()
+      .from(schema.motors)
+      .where(eq(schema.motors.id, inv.motorId))
+      .limit(1)
+
+    const item: InventoryItemWithMotor = {
+      ...inv,
+      motor: motor || {
+        id: inv.motorId,
+        manufacturer: 'Unknown',
+        model: 'Unknown',
+        impulseClass: null,
+        delayS: null,
+        diameterMm: null,
+        totalImpulseNs: null,
+      },
+    }
+
+    const flyer = (c.get as any)('user')
+    const content = adjustInventoryFormView(item)
+    const fullHtml = pageLayout({
+      title: `Adjust Motor Stock — ${item.motor?.manufacturer || ''} ${item.motor?.model || 'Motor'}`,
+      activeTab: 'inventory',
+      content,
+      user: flyer,
+    })
+    return c.html(fullHtml, 200, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
   let newOnHand = inv.quantityOnHand
   let newExpended = inv.expendedCount
   let txType = 'audit_adjustment'
@@ -458,6 +494,14 @@ export async function adjustInventoryHandler(c: any) {
     notes: `Quick adjust action: ${action || field || 'stock update'}`,
   })
 
+  // If standard non-HTMX form submission (e.g. from /motors/:id "Log Expend" or themed form), redirect back
+  const isHtmx = c.req.header('HX-Request') === 'true'
+  if (!isHtmx && c.req.method === 'POST') {
+    const referer = c.req.header('Referer')
+    const redirectUrl = referer && !referer.endsWith('/adjust') ? referer : '/inventory'
+    return c.redirect(redirectUrl, 303)
+  }
+
   // Retrieve motor specs for rendering the row
   const [motor] = await db
     .select()
@@ -481,6 +525,38 @@ export async function adjustInventoryHandler(c: any) {
   const fragment = inventoryRowFragment(item)
 
   return c.html(fragment, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
+ * New Motor Inventory Form Handler (GET /inventory/motors/new).
+ */
+export async function newMotorInventoryFormHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user')
+
+  const catalogMotors = await db
+    .select()
+    .from(schema.motors)
+    .where(isNull(schema.motors.deletedAt))
+    .orderBy(asc(schema.motors.impulseClass), asc(schema.motors.manufacturer), asc(schema.motors.model))
+
+  const userStorageSites = await db
+    .select()
+    .from(schema.storageSites)
+    .where(and(eq(schema.storageSites.userId, flyer.id), isNull(schema.storageSites.deletedAt)))
+    .orderBy(asc(schema.storageSites.name))
+
+  const content = addMotorInventoryFormView(catalogMotors, userStorageSites)
+  const fullHtml = pageLayout({
+    title: 'Add Motor to Inventory',
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
     'Content-Type': 'text/html; charset=utf-8',
   })
 }
@@ -1484,8 +1560,13 @@ inventoryRouter.get('/', listInventoryHandler)
 inventoryRouter.get('/inventory', listInventoryHandler)
 inventoryRouter.get('/motors', listInventoryHandler)
 inventoryRouter.get('/inventory/motors', listInventoryHandler)
+// New Motor form
+inventoryRouter.get('/motors/new', newMotorInventoryFormHandler)
+inventoryRouter.get('/inventory/motors/new', newMotorInventoryFormHandler)
 inventoryRouter.post('/', addInventoryHandler)
 inventoryRouter.post('/inventory', addInventoryHandler)
+inventoryRouter.post('/motors', addInventoryHandler)
+inventoryRouter.post('/inventory/motors', addInventoryHandler)
 
 // Motor adjust
 inventoryRouter.post('/:id/adjust', adjustInventoryHandler)

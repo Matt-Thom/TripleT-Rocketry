@@ -55,7 +55,7 @@ describe('Challenger M3: Adversarial Storage Sites Verification', () => {
       const html = await res.text()
 
       // Must render storage site listing, NOT launch site detail
-      assertContains(html, 'Propellant Storage Sites & Magazines')
+      assertContains(html, 'Storage Sites')
       assertContains(html, 'Monarto Propellant Depot')
       assertNotContains(html, 'Monarto Launch Complex')
       assertNotContains(html, 'CASA Airspace Ceiling')
@@ -124,7 +124,7 @@ describe('Challenger M3: Adversarial Storage Sites Verification', () => {
       const html = await res.text()
 
       // Storage site fields
-      assertContains(html, 'Register New Storage Site / Magazine')
+      assertContains(html, 'Register New Storage Site')
       assertContains(html, 'capacity_kg')
       assertContains(html, 'permit_number')
       // Must NOT contain launch site fields
@@ -377,14 +377,14 @@ describe('Challenger M3: Adversarial Storage Sites Verification', () => {
       expect(location).toBe(`/sites/storage-sites/${site.id}`)
     })
 
-    it('3.2: POST /inventory/storage-sites enforces SafeWork SA regulations (>3.0 kg requires permit)', async () => {
+    it('3.2: POST /inventory/storage-sites allows capacity > 3.0 kg without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
       const res = await fetchPostForm(
         '/inventory/storage-sites',
         {
-          name: 'Illegal Over-Limit Bunker',
+          name: 'Over-Limit Bunker',
           capacity_kg: 4.5,
           permit_number: '',
         },
@@ -392,17 +392,16 @@ describe('Challenger M3: Adversarial Storage Sites Verification', () => {
         { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect(res.status).toBe(303)
 
-      // Ensure NOT created in D1
+      // Ensure created in D1
       const db = getDb()
       const [site] = await db
         .select()
         .from(schema.storageSites)
-        .where(eq(schema.storageSites.name, 'Illegal Over-Limit Bunker'))
-      expect(site).toBeUndefined()
+        .where(eq(schema.storageSites.name, 'Over-Limit Bunker'))
+      expect(site).toBeDefined()
+      expect(site.capacityKg).toBeCloseTo(4.5)
     })
 
     it('3.3: POST /inventory/storage-sites/:id/edit updates record in D1', async () => {
@@ -508,14 +507,14 @@ describe('Challenger M3: Adversarial Storage Sites Verification', () => {
       assertNotContains(html, 'href="/inventory/storage-sites"')
     })
 
-    it('4.3: Inventory hub (/inventory) links to /sites/storage-sites and NOT /inventory/storage-sites', async () => {
+    it('4.3: Inventory hub (/inventory) does not link to storage sites (removed per request)', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
       const res = await fetchGet('/inventory', { Cookie: `triplet_session=${token}` })
       const html = await res.text()
 
-      assertContains(html, 'href="/sites/storage-sites"')
+      assertNotContains(html, 'href="/sites/storage-sites"')
       assertNotContains(html, 'href="/inventory/storage-sites"')
     })
 

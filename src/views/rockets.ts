@@ -1966,10 +1966,14 @@ export function importRocketFormView(errorMessage?: string): HtmlEscapedString |
           <label class="block text-sm font-semibold text-white mb-2">
             OpenRocket File (.ork) <span class="text-rose-400">*</span>
           </label>
-          <div class="border-2 border-dashed border-slate-700 hover:border-brand-400/80 rounded-xl p-8 text-center transition-colors bg-slate-900/40">
+          <div
+            id="drop-zone"
+            class="border-2 border-dashed border-slate-700 hover:border-brand-400/80 rounded-xl p-8 text-center transition-all bg-slate-900/40 cursor-pointer"
+            onclick="document.getElementById('file').click();"
+          >
             <div class="space-y-2">
-              <span class="text-4xl block">📦</span>
-              <div class="text-sm text-slate-300">
+              <span class="text-4xl block pointer-events-none">📦</span>
+              <div class="text-sm text-slate-300 pointer-events-none">
                 <label for="file" class="relative cursor-pointer rounded-md font-medium text-brand-400 hover:text-brand-300 focus-within:outline-none">
                   <span>Upload an .ork file</span>
                   <input
@@ -1979,13 +1983,13 @@ export function importRocketFormView(errorMessage?: string): HtmlEscapedString |
                     accept=".ork,application/zip"
                     required
                     class="sr-only"
-                    onchange="if (this.files[0]) document.getElementById('selected-filename').textContent = this.files[0].name;"
+                    onchange="if (this.files[0]) document.getElementById('selected-filename').textContent = 'Selected: ' + this.files[0].name + ' (' + (this.files[0].size / 1024).toFixed(1) + ' KB)';"
                   />
                 </label>
                 <span class="text-slate-400"> or drag and drop</span>
               </div>
-              <p class="text-xs text-slate-500">Standard OpenRocket archive up to 10 MB</p>
-              <div id="selected-filename" class="text-xs font-semibold text-brand-300 pt-2"></div>
+              <p class="text-xs text-slate-500 pointer-events-none">Standard OpenRocket archive up to 10 MB</p>
+              <div id="selected-filename" class="text-xs font-semibold text-brand-300 pt-2 pointer-events-none"></div>
             </div>
           </div>
         </div>
@@ -1999,9 +2003,11 @@ export function importRocketFormView(errorMessage?: string): HtmlEscapedString |
             <li>Rocket airframe name & stages</li>
             <li>Total axial length (mm)</li>
             <li>Maximum outer body diameter (mm)</li>
-            <li>Total dry mass / weight (g)</li>
+            <li>Total dry mass & loaded mass (g)</li>
+            <li>Aerodynamic stability margin (calibers)</li>
             <li>Motor mount tube diameter (mm)</li>
             <li>Fin count & recovery devices</li>
+            <li>Center of gravity (CG) & pressure (CP)</li>
           </ul>
         </div>
 
@@ -2021,6 +2027,50 @@ export function importRocketFormView(errorMessage?: string): HtmlEscapedString |
           </button>
         </div>
       </form>
+
+      <!-- Drag and drop event handling script -->
+      <script>
+        (function() {
+          var dropZone = document.getElementById('drop-zone');
+          var fileInput = document.getElementById('file');
+          var fileNameDisplay = document.getElementById('selected-filename');
+          if (!dropZone || !fileInput) return;
+
+          ['dragenter', 'dragover'].forEach(function(eventName) {
+            dropZone.addEventListener(eventName, function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              dropZone.classList.add('border-brand-400', 'bg-slate-800/80');
+            }, false);
+          });
+
+          ['dragleave', 'dragend'].forEach(function(eventName) {
+            dropZone.addEventListener(eventName, function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              dropZone.classList.remove('border-brand-400', 'bg-slate-800/80');
+            }, false);
+          });
+
+          dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-brand-400', 'bg-slate-800/80');
+
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              fileInput.files = e.dataTransfer.files;
+              var file = e.dataTransfer.files[0];
+              if (fileNameDisplay) {
+                fileNameDisplay.textContent = 'Selected: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+              }
+            }
+          }, false);
+
+          // Prevent window-level accidental drop navigation
+          window.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
+          window.addEventListener('drop', function(e) { e.preventDefault(); }, false);
+        })();
+      </script>
     </div>
   `
 }

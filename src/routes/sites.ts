@@ -126,7 +126,21 @@ async function handleListSites(c: any) {
   }
 
   const user = c.get('user') || null
-  return c.html(sitesListView(allSites, user))
+  let storageSitesList: any[] = []
+  if (user) {
+    storageSitesList = await db
+      .select()
+      .from(schema.storageSites)
+      .where(
+        and(
+          eq(schema.storageSites.userId, user.id),
+          isNull(schema.storageSites.deletedAt),
+        ),
+      )
+      .orderBy(asc(schema.storageSites.name))
+  }
+
+  return c.html(sitesListView(allSites, user, storageSitesList))
 }
 
 function handleNewSiteForm(c: any) {
@@ -452,23 +466,6 @@ export async function createStorageSiteHandler(c: any) {
     )
   }
 
-  // SafeWork SA Compliance Rule: capacityKg > 3.0 strictly requires regulatory permit
-  if (input.capacityKg > 3.0 && (!input.permitNumber || input.permitNumber.trim().length === 0)) {
-    const errorMsg = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg'
-    if (input.isJson) return c.json({ error: errorMsg }, 400)
-    const content = storageSiteFormView({
-      site: input,
-      error: errorMsg,
-      isNew: true,
-      user: flyer,
-    })
-    return c.html(
-      pageLayout({ title: 'New Storage Site', activeTab: 'sites', content, user: flyer }),
-      400,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
   const [site] = await db
     .insert(schema.storageSites)
     .values({
@@ -665,23 +662,6 @@ export async function updateStorageSiteHandler(c: any) {
 
   if (!input.name) {
     const errorMsg = 'Storage site name is required'
-    if (input.isJson) return c.json({ error: errorMsg }, 400)
-    const content = storageSiteFormView({
-      site: { ...existing, ...input, id },
-      error: errorMsg,
-      isNew: false,
-      user: flyer,
-    })
-    return c.html(
-      pageLayout({ title: `Edit Storage Site — ${existing.name}`, activeTab: 'sites', content, user: flyer }),
-      400,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
-  // SafeWork SA Compliance Rule: capacityKg > 3.0 strictly requires regulatory permit
-  if (input.capacityKg > 3.0 && (!input.permitNumber || input.permitNumber.trim().length === 0)) {
-    const errorMsg = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg'
     if (input.isJson) return c.json({ error: errorMsg }, 400)
     const content = storageSiteFormView({
       site: { ...existing, ...input, id },

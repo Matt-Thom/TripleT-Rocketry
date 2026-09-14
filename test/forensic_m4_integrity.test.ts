@@ -275,7 +275,7 @@ describe('Forensic Integrity Audit: Milestone 4', () => {
   })
 
   describe('Check 4: Genuine SafeWork SA Numeric Threshold Evaluation (> 3.0 kg)', () => {
-    it('allows capacity <= 3.0 kg without permit and rejects capacity > 3.0 kg without permit', async () => {
+    it('allows capacity <= 3.0 kg and capacity > 3.0 kg without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
       const cookie = `triplet_session=${token}`
@@ -293,7 +293,7 @@ describe('Forensic Integrity Audit: Milestone 4', () => {
       )
       expect([200, 201, 302, 303]).toContain(exactBoundaryRes.status)
 
-      // Boundary: 3.001 kg -> FAILS with 400 without permit
+      // Boundary: 3.001 kg -> SUCCEEDS without hard limit (shows visible flag)
       const slightExcessRes = await fetchPostForm(
         '/inventory/storage-sites',
         {
@@ -302,10 +302,9 @@ describe('Forensic Integrity Audit: Milestone 4', () => {
           permit_number: '',
         },
         { Cookie: cookie },
+        { redirect: 'manual' },
       )
-      expect(slightExcessRes.status).toBe(400)
-      const errText = await slightExcessRes.text()
-      expect(errText).toContain('SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg')
+      expect([200, 201, 302, 303]).toContain(slightExcessRes.status)
 
       // Boundary: 3.001 kg -> SUCCEEDS when valid permit is provided
       const slightExcessWithPermitRes = await fetchPostForm(
@@ -319,18 +318,6 @@ describe('Forensic Integrity Audit: Milestone 4', () => {
         { redirect: 'manual' },
       )
       expect([200, 201, 302, 303]).toContain(slightExcessWithPermitRes.status)
-
-      // Whitespace permit on > 3.0 kg -> FAILS with 400
-      const whitespacePermitRes = await fetchPostForm(
-        '/inventory/storage-sites',
-        {
-          name: 'Whitespace Permit Site',
-          capacity_kg: 4.5,
-          permit_number: '     ',
-        },
-        { Cookie: cookie },
-      )
-      expect(whitespacePermitRes.status).toBe(400)
     })
   })
 
@@ -350,7 +337,6 @@ describe('Forensic Integrity Audit: Milestone 4', () => {
       expect(formHtml).toContain('id="safework-compliance-callout"')
       expect(formHtml).toContain('checkSafeWorkCompliance')
       expect(formHtml).toContain('val > 3.0')
-      expect(formHtml).toContain('permitInput.setAttribute(\'required\'')
 
       // Check inventory hub with zero-quantity motor renders dismiss button
       const motorZero = await seedTestMotor({ model: 'ZERO-MOTOR-1' })

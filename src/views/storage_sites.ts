@@ -45,23 +45,41 @@ export interface StorageSiteDetailData {
 }
 
 /**
- * Format SafeWork SA compliance badge based on capacity and permit presence.
+ * Format Storage Permit compliance badge based on capacity ranges and permit presence.
+ * - Under 3.0 kg: Exempt / Standard Storage.
+ * - 3.0 to 60.0 kg: Storage Permit required in South Australia.
+ * - Over 60.0 kg: Magazine Permit required in South Australia.
  */
-export function formatSafeWorkBadge(capacityKg: number, permitNumber?: string | null): HtmlEscapedString | Promise<HtmlEscapedString> {
+export function formatStoragePermitBadge(capacityKg: number, permitNumber?: string | null): HtmlEscapedString | Promise<HtmlEscapedString> {
   const cap = capacityKg || 0
   const hasPermit = Boolean(permitNumber && permitNumber.trim().length > 0)
 
-  if (cap > 3.0) {
+  if (cap > 60.0) {
     if (hasPermit) {
       return html`
-        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/60 shadow-sm" title="SafeWork SA Propellant License Compliant">
-          <span class="mr-1">🛡️</span> SafeWork SA Licensed (${permitNumber})
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-950 text-sky-300 border border-sky-700/60 shadow-sm" title="Magazine Permit Authorized">
+          <span class="mr-1">🏛️</span> Magazine Permit (${permitNumber})
         </span>
       `
     }
     return html`
-      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-950 text-red-300 border border-red-700/60 shadow-sm" title="Exceeds 3.0 kg limit without permit!">
-        <span class="mr-1">⚠️</span> Permit Required (&gt; 3.0 kg)
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950 text-rose-300 border border-rose-700/60 shadow-sm" title="Magazine Permit required for storage over 60 kg in SA">
+        <span class="mr-1">🚨</span> Magazine Permit Required (&gt; 60 kg)
+      </span>
+    `
+  }
+
+  if (cap > 3.0) {
+    if (hasPermit) {
+      return html`
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/60 shadow-sm" title="Storage Permit Authorized">
+          <span class="mr-1">🛡️</span> Storage Permit (${permitNumber})
+        </span>
+      `
+    }
+    return html`
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-950 text-amber-300 border border-amber-700/60 shadow-sm" title="Storage Permit required for storage between 3 kg and 60 kg in SA">
+        <span class="mr-1">⚠️</span> Storage Permit Required (3–60 kg)
       </span>
     `
   }
@@ -76,10 +94,12 @@ export function formatSafeWorkBadge(capacityKg: number, permitNumber?: string | 
 
   return html`
     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60">
-      Hobby Exempt (≤ 3.0 kg)
+      Exempt (≤ 3.0 kg)
     </span>
   `
 }
+
+export const formatSafeWorkBadge = formatStoragePermitBadge
 
 /**
  * Storage Sites Listing View (GET /sites/storage-sites).
@@ -98,10 +118,10 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
           </div>
           <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2.5">
             <span>🏰</span>
-            <span>Propellant Storage Sites & Magazines</span>
+            <span>Storage Sites</span>
           </h1>
           <p class="text-sm text-slate-400 mt-1">
-            Physical explosive storage facilities, field boxes, and South Australia SafeWork SA statutory compliance tracking.
+            Physical explosive storage facilities, workshop magazines, and regulatory permit compliance tracking.
           </p>
         </div>
         <div class="flex items-center gap-3">
@@ -115,15 +135,16 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
         </div>
       </div>
 
-      <!-- SafeWork SA Regulatory Callout -->
+      <!-- Regulatory Storage Guidance Callout -->
       <div class="rounded-xl bg-slate-850/80 border border-slate-800 p-4">
         <div class="flex items-start gap-3">
           <span class="text-xl flex-shrink-0">⚖️</span>
           <div class="text-xs text-slate-300 space-y-1">
-            <p class="font-semibold text-slate-200">South Australia Explosives Regulation (SafeWork SA & AS 2187 Compliance):</p>
+            <p class="font-semibold text-slate-200">Statutory Propellant Storage Guidelines (South Australia & General):</p>
             <p class="text-slate-400">
-              Storage capacity up to <strong>3.0 kg</strong> net propellant mass is permitted without a statutory license for authorized rocketry hobbyists.
-              Any physical storage site or magazine configured to exceed <strong>3.0 kg</strong> strictly requires a registered <strong>SafeWork SA Propellant Storage License / Permit Number</strong>.
+              Storage capacity up to <strong>3.0 kg</strong> net propellant mass is exempt from statutory permits for authorized hobbyists.
+              Storage capacity between <strong>3.0 kg and 60.0 kg</strong> requires a registered <strong>Storage Permit</strong>.
+              Storage capacity exceeding <strong>60.0 kg</strong> requires an approved <strong>Magazine Permit</strong>.
             </p>
           </div>
         </div>
@@ -154,7 +175,7 @@ export function storageSitesListView(sites: StorageSite[], user?: ActiveFlyer | 
                 <tr>
                   <th scope="col" class="py-3.5 pl-4 pr-3 sm:pl-6">Site Name & Location</th>
                   <th scope="col" class="px-3 py-3.5">Capacity (kg)</th>
-                  <th scope="col" class="px-3 py-3.5">SafeWork SA Compliance</th>
+                  <th scope="col" class="px-3 py-3.5">Permit Status</th>
                   <th scope="col" class="px-3 py-3.5 hidden md:table-cell">Notes</th>
                   <th scope="col" class="py-3.5 pl-3 pr-4 sm:pr-6 text-right">Actions</th>
                 </tr>
@@ -207,7 +228,9 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
   const isEditing = !isNew && Boolean(site?.id)
   const capacityValue = site?.capacityKg !== undefined && site?.capacityKg !== null ? String(site.capacityKg) : ''
   const currentCapacity = parseFloat(capacityValue) || 0
-  const exceedsSAThreshold = currentCapacity > 3.0
+  const isMagazineRange = currentCapacity > 60.0
+  const isStorageRange = currentCapacity > 3.0 && currentCapacity <= 60.0
+  const exceedsExemption = currentCapacity > 3.0
 
   return html`
     <div class="max-w-3xl mx-auto space-y-6">
@@ -224,10 +247,10 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
       <div class="pb-4 border-b border-slate-800">
         <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
           <span>🏰</span>
-          <span>${isEditing ? `Edit Storage Site: ${site?.name}` : 'Register New Storage Site / Magazine'}</span>
+          <span>${isEditing ? `Edit Storage Site: ${site?.name}` : 'Register New Storage Site'}</span>
         </h1>
         <p class="text-sm text-slate-400 mt-1">
-          Configure physical storage dimensions and statutory explosives licensing conditions.
+          Configure physical propellant storage capacity and regulatory permit details.
         </p>
       </div>
 
@@ -254,7 +277,7 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
           <!-- Site Name -->
           <div>
             <label for="name" class="block text-sm font-medium text-slate-200 mb-1">
-              Storage Site / Magazine Name <span class="text-rose-400">*</span>
+              Storage Site Name <span class="text-rose-400">*</span>
             </label>
             <input
               type="text"
@@ -305,24 +328,28 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
               </div>
             </div>
             <p class="text-xs text-slate-400 mt-1">
-              Maximum allowable solid propellant mass (Net Explosive Weight) for this storage location.
+              Maximum allowable solid propellant mass (Net Explosive Quantity) for this storage location.
             </p>
           </div>
 
-          <!-- Dynamic SafeWork SA Compliance Callout -->
+          <!-- Dynamic Regulatory Storage Permit Compliance Callout -->
           <div
             id="safework-compliance-callout"
-            class="${exceedsSAThreshold ? '' : 'hidden'} rounded-xl bg-amber-950/40 border border-amber-500/60 p-4 transition-all"
+            class="${exceedsExemption ? '' : 'hidden'} rounded-xl ${isMagazineRange ? 'bg-sky-950/40 border-sky-500/60' : 'bg-amber-950/40 border-amber-500/60'} border p-4 transition-all"
           >
             <div class="flex items-start gap-3">
-              <span class="text-2xl flex-shrink-0">⚠️</span>
+              <span id="callout-icon" class="text-2xl flex-shrink-0">${isMagazineRange ? '🏛️' : '⚠️'}</span>
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-amber-300 flex items-center gap-2">
-                  SafeWork SA Statutory Propellant Storage Requirement
-                  <span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-amber-900/80 text-amber-200 border border-amber-600/60">Regulated &gt; 3.0 kg</span>
+                <h4 id="callout-title" class="text-sm font-bold ${isMagazineRange ? 'text-sky-300' : 'text-amber-300'} flex items-center gap-2">
+                  <span>${isMagazineRange ? 'Magazine Permit Advisory' : 'Storage Permit Advisory'}</span>
+                  <span id="callout-badge" class="px-2 py-0.5 rounded text-[10px] uppercase font-bold ${isMagazineRange ? 'bg-sky-900/80 text-sky-200 border border-sky-600/60' : 'bg-amber-900/80 text-amber-200 border border-amber-600/60'}">
+                    ${isMagazineRange ? 'Over 60 kg (Magazine Permit)' : '3–60 kg (Storage Permit)'}
+                  </span>
                 </h4>
-                <p class="text-xs text-amber-200/90 leading-relaxed">
-                  Under South Australian explosives regulations and AS 2187, propellant storage capacity exceeding <strong>3.0 kg</strong> requires a valid <strong>SafeWork SA Licence to Store Explosives on Premises</strong> or an approved statutory permit. You must enter your regulatory permit number below to register this storage location.
+                <p id="callout-desc" class="text-xs ${isMagazineRange ? 'text-sky-200/90' : 'text-amber-200/90'} leading-relaxed">
+                  ${isMagazineRange
+                    ? 'In South Australia, propellant storage capacity exceeding 60.0 kg requires a Magazine Permit. Entry is permitted; ensure your regulatory documentation is recorded.'
+                    : 'In South Australia, propellant storage capacity between 3.0 kg and 60.0 kg requires a Storage Permit. Entry is permitted; ensure your regulatory documentation is recorded.'}
                 </p>
               </div>
             </div>
@@ -331,22 +358,25 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
           <!-- Permit Number -->
           <div>
             <label for="permit_number" class="block text-sm font-medium text-slate-200 mb-1">
-              SafeWork SA Permit / Storage License Number
-              <span id="permit-required-asterisk" class="${exceedsSAThreshold ? '' : 'hidden'} text-amber-400 font-bold ml-1">* (Required &gt; 3.0 kg)</span>
+              Storage Permit Number
+              <span id="permit-required-asterisk" class="${exceedsExemption ? '' : 'hidden'} text-xs font-semibold px-2 py-0.5 rounded ml-2 ${isMagazineRange ? 'bg-sky-900/80 text-sky-200 border border-sky-600/60' : 'bg-amber-900/80 text-amber-200 border border-amber-600/60'}">
+                ${isMagazineRange ? '🏛️ Magazine Permit Required (&gt; 60 kg)' : '🛡️ Storage Permit Required (3–60 kg)'}
+              </span>
             </label>
             <input
               type="text"
               id="permit_number"
               name="permit_number"
               value="${site?.permitNumber ?? ''}"
-              placeholder="e.g. SAFEWORK-SA-EXP-2026-88"
-              class="w-full bg-slate-900 border ${exceedsSAThreshold ? 'border-amber-500 focus:ring-amber-500 focus:border-amber-500' : 'border-slate-700 focus:ring-brand-500 focus:border-brand-500'} rounded-lg px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 transition-colors font-mono"
-              ${exceedsSAThreshold ? 'required' : ''}
+              placeholder="e.g. PERMIT-2026-88"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3.5 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors font-mono"
             />
-            <p id="permit-help-text" class="text-xs ${exceedsSAThreshold ? 'text-amber-400 font-semibold' : 'text-slate-400'} mt-1">
-              ${exceedsSAThreshold
-                ? 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg.'
-                : 'Optional for storage capacity 3.0 kg or under (South Australia hobby exemption).'}
+            <p id="permit-help-text" class="text-xs text-slate-400 mt-1">
+              ${isMagazineRange
+                ? 'Over 60 kg requires a Magazine Permit in SA.'
+                : isStorageRange
+                ? 'From 3–60 kg requires a Storage Permit in SA.'
+                : 'Optional for storage capacity 3.0 kg or under (hobby exemption).'}
             </p>
           </div>
 
@@ -384,7 +414,7 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
       </form>
     </div>
 
-    <!-- Client-side Dynamic SafeWork SA Compliance Validation Script -->
+    <!-- Client-side Dynamic Storage Permit Compliance Validation Script -->
     <script>
       (function() {
         function checkSafeWorkCompliance() {
@@ -393,31 +423,53 @@ export function storageSiteFormView(options: StorageSiteFormOptions): HtmlEscape
           var callout = document.getElementById('safework-compliance-callout');
           var asterisk = document.getElementById('permit-required-asterisk');
           var helpText = document.getElementById('permit-help-text');
-          if (!capacityInput || !permitInput) return;
+          var calloutIcon = document.getElementById('callout-icon');
+          var calloutTitle = document.getElementById('callout-title');
+          var calloutBadge = document.getElementById('callout-badge');
+          var calloutDesc = document.getElementById('callout-desc');
+          if (!capacityInput) return;
 
           var val = parseFloat(capacityInput.value);
-          var exceedsLimit = !isNaN(val) && val > 3.0;
+          var isMagazine = !isNaN(val) && val > 60.0;
+          var isStorage = !isNaN(val) && val > 3.0 && val <= 60.0;
+          var exceedsLimit = isMagazine || isStorage;
 
           if (exceedsLimit) {
-            if (callout) callout.classList.remove('hidden');
-            if (asterisk) asterisk.classList.remove('hidden');
-            permitInput.setAttribute('required', 'required');
-            permitInput.setAttribute('aria-required', 'true');
-            permitInput.classList.add('border-amber-500', 'focus:ring-amber-500', 'focus:border-amber-500');
-            permitInput.classList.remove('border-slate-700', 'focus:ring-brand-500', 'focus:border-brand-500');
+            if (callout) {
+              callout.classList.remove('hidden');
+              if (isMagazine) {
+                callout.className = 'rounded-xl bg-sky-950/40 border border-sky-500/60 p-4 transition-all';
+                if (calloutIcon) calloutIcon.textContent = '🏛️';
+                if (calloutTitle) calloutTitle.innerHTML = '<span>Magazine Permit Advisory</span> <span id="callout-badge" class="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-sky-900/80 text-sky-200 border border-sky-600/60">Over 60 kg (Magazine Permit)</span>';
+                if (calloutDesc) calloutDesc.textContent = 'In South Australia, propellant storage capacity exceeding 60.0 kg requires a Magazine Permit. Entry is permitted; ensure your regulatory documentation is recorded.';
+              } else {
+                callout.className = 'rounded-xl bg-amber-950/40 border border-amber-500/60 p-4 transition-all';
+                if (calloutIcon) calloutIcon.textContent = '⚠️';
+                if (calloutTitle) calloutTitle.innerHTML = '<span>Storage Permit Advisory</span> <span id="callout-badge" class="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-amber-900/80 text-amber-200 border border-amber-600/60">3–60 kg (Storage Permit)</span>';
+                if (calloutDesc) calloutDesc.textContent = 'In South Australia, propellant storage capacity between 3.0 kg and 60.0 kg requires a Storage Permit. Entry is permitted; ensure your regulatory documentation is recorded.';
+              }
+            }
+            if (asterisk) {
+              asterisk.classList.remove('hidden');
+              if (isMagazine) {
+                asterisk.textContent = '🏛️ Magazine Permit Required (> 60 kg)';
+                asterisk.className = 'text-xs font-semibold px-2 py-0.5 rounded ml-2 bg-sky-900/80 text-sky-200 border border-sky-600/60';
+              } else {
+                asterisk.textContent = '🛡️ Storage Permit Required (3–60 kg)';
+                asterisk.className = 'text-xs font-semibold px-2 py-0.5 rounded ml-2 bg-amber-900/80 text-amber-200 border border-amber-600/60';
+              }
+            }
             if (helpText) {
-              helpText.textContent = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg.';
-              helpText.className = 'text-xs text-amber-400 font-semibold mt-1';
+              helpText.textContent = isMagazine
+                ? 'Over 60 kg requires a Magazine Permit in SA.'
+                : 'From 3–60 kg requires a Storage Permit in SA.';
+              helpText.className = 'text-xs text-slate-400 mt-1';
             }
           } else {
             if (callout) callout.classList.add('hidden');
             if (asterisk) asterisk.classList.add('hidden');
-            permitInput.removeAttribute('required');
-            permitInput.removeAttribute('aria-required');
-            permitInput.classList.remove('border-amber-500', 'focus:ring-amber-500', 'focus:border-amber-500');
-            permitInput.classList.add('border-slate-700', 'focus:ring-brand-500', 'focus:border-brand-500');
             if (helpText) {
-              helpText.textContent = 'Optional for storage capacity 3.0 kg or under (South Australia hobby exemption).';
+              helpText.textContent = 'Optional for storage capacity 3.0 kg or under (hobby exemption).';
               helpText.className = 'text-xs text-slate-400 mt-1';
             }
           }
@@ -529,16 +581,18 @@ export function storageSiteDetailView(
           </div>
         </div>
 
-        <!-- SafeWork SA Card -->
+        <!-- Regulatory Permit Status Card -->
         <div class="rounded-xl bg-slate-850 border border-slate-800 p-5">
-          <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">SafeWork SA Status</div>
+          <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Regulatory Permit Status</div>
           <div class="mt-2">
             ${formatSafeWorkBadge(site.capacityKg, site.permitNumber)}
           </div>
           <div class="text-xs text-slate-400 mt-2">
-            ${capacityKg > 3.0
-              ? 'Regulated facility requiring statutory permit and AS 2187 explosive magazine standards.'
-              : 'Within South Australian hobbyist exemption limit (≤ 3.0 kg).'}
+            ${capacityKg > 60.0
+              ? 'Capacity exceeds 60 kg: Magazine Permit required in South Australia.'
+              : capacityKg > 3.0
+              ? 'Capacity between 3 and 60 kg: Storage Permit required in South Australia.'
+              : 'Within hobbyist exemption limit (≤ 3.0 kg).'}
           </div>
         </div>
 

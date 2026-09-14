@@ -633,7 +633,7 @@ describe('Milestone 4 Adversarial Challenge: Motor Dismissal & Chain-of-Custody 
       expect([200, 201, 302, 303]).toContain(res.status)
     })
 
-    it('rejects storage site creation with capacity 3.01 kg when permit is omitted', async () => {
+    it('permits storage site creation with capacity 3.01 kg without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -646,14 +646,13 @@ describe('Milestone 4 Adversarial Challenge: Motor Dismissal & Chain-of-Custody 
           permit_number: '',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const text = await res.text()
-      expect(text).toMatch(/SafeWork SA regulations require a propellant storage license\/permit/i)
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
-    it('rejects storage site creation with capacity 5.0 kg when permit is only whitespace', async () => {
+    it('permits storage site creation with capacity 5.0 kg when permit is only whitespace', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -666,11 +665,10 @@ describe('Milestone 4 Adversarial Challenge: Motor Dismissal & Chain-of-Custody 
           permit_number: '     ',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const text = await res.text()
-      expect(text).toMatch(/SafeWork SA regulations require a propellant storage license\/permit/i)
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
     it('accepts storage site creation with capacity 10.0 kg when valid permit is supplied', async () => {

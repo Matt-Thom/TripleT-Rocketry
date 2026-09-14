@@ -30,6 +30,10 @@ export interface ParsedOrkData {
   lengthMm: number | null
   bodyDiameterMm: number | null
   dryMassG: number | null
+  loadedMassG: number | null
+  stabilityCalibers: number | null
+  cgMm: number | null
+  cpMm: number | null
   motorMountDiameterMm: number | null
   finCount: number | null
   recoveryType: 'dual_deploy' | 'parachute' | 'streamer' | 'other' | null
@@ -86,6 +90,22 @@ function getSubcomponentsList(
     }
   }
   return list
+}
+
+function findTagDeep(obj: unknown, tagNames: string[]): number | null {
+  if (!obj || typeof obj !== 'object') return null
+  const targets = tagNames.map((t) => t.toLowerCase())
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (targets.includes(k.toLowerCase())) {
+      const num = extractNumber(v)
+      if (num !== null && !isNaN(num)) return num
+    }
+    if (v && typeof v === 'object') {
+      const found = findTagDeep(v, tagNames)
+      if (found !== null) return found
+    }
+  }
+  return null
 }
 
 /**
@@ -277,12 +297,20 @@ export async function parseOrkArchive(
       material = extractText(data.material)
     }
 
-    // Fin count
+    // Fin count & specs
     if (type.includes('finset') || type === 'fins') {
       const count = extractNumber(data.instancecount) ?? extractNumber(data.fincount)
       if (count !== null && (finCount === null || count > finCount)) {
         finCount = Math.round(count)
       }
+      finSets.push({
+        finCount: count !== null ? Math.round(count) : null,
+        rootChordM: extractNumber(data.rootchord) ?? extractNumber(data.length),
+        tipChordM: extractNumber(data.tipchord),
+        heightM: extractNumber(data.height) ?? extractNumber(data.semispan),
+        sweepM: extractNumber(data.sweep) ?? extractNumber(data.sweeplength),
+        rootPosM: null,
+      })
     }
 
     // Parachute
@@ -309,9 +337,23 @@ export async function parseOrkArchive(
       const mmData = data.motormount as Record<string, unknown> | undefined
 
       if (mmData && typeof mmData === 'object') {
-        const motor = mmData.motor as Record<string, unknown> | undefined
-        if (motor && typeof motor === 'object') {
-          dia = extractNumber(motor.diameter)
+        const motorsList = Array.isArray(mmData.motor)
+          ? mmData.motor
+          : mmData.motor
+            ? [mmData.motor]
+            : []
+        for (const m of motorsList) {
+          if (m && typeof m === 'object') {
+            const mObj = m as Record<string, unknown>
+            if (dia === null) dia = extractNumber(mObj.diameter)
+            const mMass =
+              extractNumber(mObj.launchmass) ??
+              extractNumber(mObj.totalmass) ??
+              extractNumber(mObj.mass)
+            if (mMass !== null && mMass > 0) {
+              motorMassSum += mMass
+            }
+          }
         }
       }
 
@@ -350,6 +392,18 @@ export async function parseOrkArchive(
   }
 
   const axialTypes = ['nosecone', 'bodytube', 'transition', 'tail']
+  let currentAxialPos = 0
+  let noseLenM = 0
+  let cgMassWeightSum = 0
+  const finSets: Array<{
+    finCount: number | null
+    rootChordM: number | null
+    tipChordM: number | null
+    heightM: number | null
+    sweepM: number | null
+    rootPosM: number | null
+  }> = []
+  let motorMassSum = 0
 
   if (stageList.length > 0) {
     for (const stage of stageList) {
@@ -359,6 +413,15 @@ export async function parseOrkArchive(
           const len = extractNumber(comp.data.length)
           if (len !== null && len > 0) {
             totalLengthM += len
+            if (comp.type === 'nosecone') {
+              noseLenM = len
+            }
+            const cMass = extractNumber(comp.data.overridemass) ?? extractNumber(comp.data.mass)
+            if (cMass !== null && cMass > 0) {
+              const compCg = comp.type === 'nosecone' ? len * 0.55 : len * 0.5
+              cgMassWeightSum += cMass * (currentAxialPos + compCg)
+            }
+            currentAxialPos += len
           }
           checkRadius(comp.data)
         }
@@ -372,6 +435,15 @@ export async function parseOrkArchive(
         const len = extractNumber(comp.data.length)
         if (len !== null && len > 0) {
           totalLengthM += len
+          if (comp.type === 'nosecone') {
+            noseLenM = len
+          }
+          const cMass = extractNumber(comp.data.overridemass) ?? extractNumber(comp.data.mass)
+          if (cMass !== null && cMass > 0) {
+            const compCg = comp.type === 'nosecone' ? len * 0.55 : len * 0.5
+            cgMassWeightSum += cMass * (currentAxialPos + compCg)
+          }
+          currentAxialPos += len
         }
         checkRadius(comp.data)
       }
@@ -427,6 +499,105 @@ export async function parseOrkArchive(
       ? Math.round(motorMountDiaM * 1000 * 10) / 10
       : null
 
+  // 6. Stability & CG / CP Extraction
+  let stabilityCalibers: number | null = null
+  let cgMm: number | null = null
+  let cpMm: number | null = null
+
+  // Check explicit stability tags anywhere in document (e.g. simulations, conditions, root)
+  const explicitStability = findTagDeep(doc, [
+    'stabilitycalibers',
+    'stabilitymargin',
+    'launchstability',
+    'staticmargin',
+    'stability',
+    'initialstability',
+  ])
+
+  if (explicitStability !== null && !isNaN(explicitStability)) {
+    stabilityCalibers = Math.round(explicitStability * 100) / 100
+  }
+
+  // Check explicit CG and CP
+  const explicitCg = findTagDeep(doc, ['overridecg', 'cg'])
+  const explicitCp = findTagDeep(doc, ['overridecp', 'cp'])
+
+  if (explicitCg !== null && explicitCg > 0) {
+    cgMm = Math.round(explicitCg * 1000 * 10) / 10
+  }
+  if (explicitCp !== null && explicitCp > 0) {
+    cpMm = Math.round(explicitCp * 1000 * 10) / 10
+  }
+
+  if (stabilityCalibers === null && explicitCg !== null && explicitCp !== null && maxRadiusM > 0) {
+    stabilityCalibers = Math.round(((explicitCp - explicitCg) / (maxRadiusM * 2)) * 100) / 100
+  }
+
+  // If stability is still null, compute using Barrowman CP and component-weighted CG
+  if (stabilityCalibers === null && maxRadiusM > 0 && totalLengthM > 0) {
+    const refDiameterM = maxRadiusM * 2
+    let cnaTotal = 2.0 // Nose cone CNA = 2
+    let cnaXcpSum = 2.0 * (0.466 * (noseLenM > 0 ? noseLenM : totalLengthM * 0.25))
+
+    for (const f of finSets) {
+      const n = f.finCount || finCount || 4
+      const cr = f.rootChordM && f.rootChordM > 0 ? f.rootChordM : 0.12 * totalLengthM
+      const ct = f.tipChordM && f.tipChordM > 0 ? f.tipChordM : cr * 0.5
+      const s = f.heightM && f.heightM > 0 ? f.heightM : maxRadiusM * 1.5
+      const xr = f.sweepM && f.sweepM > 0 ? f.sweepM : cr * 0.4
+      const xRoot = f.rootPosM && f.rootPosM > 0 ? f.rootPosM : Math.max(0, totalLengthM - cr)
+
+      const r = maxRadiusM
+      const lm = Math.sqrt(xr * xr + Math.pow(cr / 2 - ct / 2, 2) + s * s)
+      const cnaFin =
+        (1 + r / (s + r)) *
+        ((4 * n * Math.pow(s / refDiameterM, 2)) /
+          (1 + Math.sqrt(1 + Math.pow((2 * lm) / (cr + ct), 2))))
+
+      const xf =
+        xRoot +
+        (xr * (cr + 2 * ct)) / (3 * (cr + ct)) +
+        (1 / 6) * (cr + ct - (cr * ct) / (cr + ct))
+
+      cnaTotal += cnaFin
+      cnaXcpSum += cnaFin * xf
+    }
+
+    const calculatedCpM = cnaXcpSum / cnaTotal
+    const calculatedCgM =
+      cgMassWeightSum > 0 && componentMassSum > 0
+        ? cgMassWeightSum / componentMassSum
+        : totalLengthM * 0.58
+
+    if (calculatedCpM > 0 && calculatedCgM > 0) {
+      if (cpMm === null) cpMm = Math.round(calculatedCpM * 1000 * 10) / 10
+      if (cgMm === null) cgMm = Math.round(calculatedCgM * 1000 * 10) / 10
+      stabilityCalibers = Math.round(((calculatedCpM - calculatedCgM) / refDiameterM) * 100) / 100
+    }
+  }
+
+  // 7. Loaded Mass
+  let loadedMassKg: number | null = null
+  const explicitLaunchMass = findTagDeep(doc, [
+    'launchmass',
+    'loadedmass',
+    'liftoffmass',
+    'launch_mass',
+  ])
+
+  if (explicitLaunchMass !== null && explicitLaunchMass > 0) {
+    loadedMassKg = explicitLaunchMass
+  } else if (motorMassSum > 0 && massKg !== null) {
+    loadedMassKg = massKg + motorMassSum
+  } else if (massKg !== null && massKg > 0) {
+    loadedMassKg = massKg
+  }
+
+  const loadedMassG =
+    loadedMassKg !== null && loadedMassKg > 0
+      ? Math.round(loadedMassKg * 1000 * 10) / 10
+      : null
+
   // Recovery Determination
   let recoveryType: 'dual_deploy' | 'parachute' | 'streamer' | 'other' | null = null
   let parachuteSizeMm: number | null = null
@@ -458,6 +629,10 @@ export async function parseOrkArchive(
     lengthMm,
     bodyDiameterMm,
     dryMassG,
+    loadedMassG,
+    stabilityCalibers,
+    cgMm,
+    cpMm,
     motorMountDiameterMm,
     finCount,
     recoveryType,

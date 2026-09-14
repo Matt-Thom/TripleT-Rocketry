@@ -11,6 +11,8 @@ import type { HtmlEscapedString } from 'hono/utils/html'
 import { pageLayout } from './layout'
 import type { launchSites, launchEvents } from '../db/schema'
 import type { ActiveFlyer } from '../db/context'
+import type { StorageSite } from './storage_sites'
+import { formatStoragePermitBadge } from './storage_sites'
 
 export type LaunchSite = typeof launchSites.$inferSelect
 export type LaunchEvent = typeof launchEvents.$inferSelect
@@ -47,123 +49,228 @@ function formatCoordinates(lat: number | null | undefined, lon: number | null | 
 }
 
 /**
- * List of launch fields showing name, GPS coordinates, CASA airspace ceiling badge,
- * notes, and action buttons.
+ * List of launch fields and propellant storage sites.
  */
-export function sitesListView(sites: LaunchSite[], user?: ActiveFlyer | null): HtmlEscapedString | Promise<HtmlEscapedString> {
+export function sitesListView(
+  sites: LaunchSite[],
+  user?: ActiveFlyer | null,
+  storageSites: StorageSite[] = [],
+): HtmlEscapedString | Promise<HtmlEscapedString> {
   const content = html`
-    <div class="space-y-6">
-      <!-- Header with Action -->
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-800">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <span>📍</span> Launch Sites & Fields
-          </h1>
-          <p class="text-sm text-slate-400 mt-1">
-            Registered launch facilities, GPS coordinates, and CASA airspace approval altitude ceilings.
-          </p>
+    <div class="space-y-10">
+      <!-- Section 1: Launch Sites & Fields -->
+      <section class="space-y-6">
+        <!-- Header with Action -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-800">
+          <div>
+            <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <span>📍</span> Launch Sites & Fields
+            </h1>
+            <p class="text-sm text-slate-400 mt-1">
+              Registered launch facilities, GPS coordinates, and CASA airspace approval altitude ceilings.
+            </p>
+          </div>
+          <div class="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+            <a
+              href="/sites/storage-sites"
+              class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-lg border border-slate-700 transition-colors shadow-sm"
+            >
+              <span>🏰</span>
+              <span>Storage Sites</span>
+            </a>
+            <a
+              href="/sites/new"
+              class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
+            >
+              <span class="text-base leading-none font-bold">+</span>
+              <span>Add Launch Site</span>
+            </a>
+          </div>
         </div>
-        <div class="flex items-center gap-3 self-start sm:self-auto flex-wrap">
-          <a
-            href="/sites/storage-sites"
-            class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-lg border border-slate-700 transition-colors shadow-sm"
-          >
-            <span>🏰</span>
-            <span>Propellant Storage & Magazines</span>
-          </a>
-          <a
-            href="/sites/new"
-            class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
-          >
-            <span class="text-base leading-none font-bold">+</span>
-            <span>Add Launch Site</span>
-          </a>
-        </div>
-      </div>
 
-      <!-- Sites Grid / List -->
-      ${sites.length === 0
-        ? html`
-            <div class="bg-slate-850 border border-slate-800 rounded-xl p-12 text-center">
-              <div class="text-4xl mb-3">📍</div>
-              <h3 class="text-lg font-semibold text-white">No Launch Sites Registered</h3>
-              <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
-                No launch fields have been added yet. Register your club field or launch site to set CASA ceilings and schedule events.
-              </p>
-              <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-                <a
-                  href="/sites/storage-sites"
-                  class="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm rounded-lg border border-slate-700 transition-colors shadow-sm"
-                >
-                  <span>🏰</span>
-                  <span>Propellant Storage & Magazines</span>
-                </a>
-                <a
-                  href="/sites/new"
-                  class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
-                >
-                  + Add Launch Site
-                </a>
+        <!-- Launch Sites Grid / List -->
+        ${sites.length === 0
+          ? html`
+              <div class="bg-slate-850 border border-slate-800 rounded-xl p-12 text-center">
+                <div class="text-4xl mb-3">📍</div>
+                <h3 class="text-lg font-semibold text-white">No Launch Sites Registered</h3>
+                <p class="text-sm text-slate-400 mt-1 max-w-md mx-auto">
+                  No launch fields have been added yet. Register your club field or launch site to set CASA ceilings and schedule events.
+                </p>
+                <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <a
+                    href="/sites/new"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
+                  >
+                    + Add Launch Site
+                  </a>
+                </div>
               </div>
-            </div>
-          `
-        : html`
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              ${sites.map(
-                (site) => html`
-                  <div class="bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all shadow-sm">
-                    <div>
-                      <div class="flex items-start justify-between gap-2">
-                        <h2 class="text-lg font-bold text-white hover:text-brand-400 transition-colors">
-                          <a href="/sites/${site.id}">${site.name}</a>
-                        </h2>
+            `
+          : html`
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                ${sites.map(
+                  (site) => html`
+                    <div class="bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all shadow-sm">
+                      <div>
+                        <div class="flex items-start justify-between gap-2">
+                          <h2 class="text-lg font-bold text-white hover:text-brand-400 transition-colors">
+                            <a href="/sites/${site.id}">${site.name}</a>
+                          </h2>
+                          <a
+                            href="/sites/${site.id}/edit"
+                            class="text-xs text-slate-400 hover:text-brand-300 px-2 py-1 rounded bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors flex items-center gap-1"
+                            title="Edit site details"
+                          >
+                            <span>✏️</span> Edit
+                          </a>
+                        </div>
+
+                        <div class="mt-3 space-y-2">
+                          <div>${formatCoordinates(site.latitude, site.longitude)}</div>
+                          <div>${formatCeiling(site.maxAltitudeAglM)}</div>
+                        </div>
+
+                        ${site.notes
+                          ? html`
+                              <p class="text-xs text-slate-400 mt-3 line-clamp-3 bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/80">
+                                ${site.notes}
+                              </p>
+                            `
+                          : ''}
+                      </div>
+
+                      <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
                         <a
-                          href="/sites/${site.id}/edit"
-                          class="text-xs text-slate-400 hover:text-brand-300 px-2 py-1 rounded bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors flex items-center gap-1"
-                          title="Edit site details"
+                          href="/events/new?launch_site_id=${site.id}"
+                          class="text-slate-400 hover:text-slate-200 transition-colors"
                         >
-                          <span>✏️</span> Edit
+                          + Schedule Event
+                        </a>
+                        <a
+                          href="/sites/${site.id}"
+                          class="text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1"
+                        >
+                          View Site &rarr;
                         </a>
                       </div>
-
-                      <div class="mt-3 space-y-2">
-                        <div>${formatCoordinates(site.latitude, site.longitude)}</div>
-                        <div>${formatCeiling(site.maxAltitudeAglM)}</div>
-                      </div>
-
-                      ${site.notes
-                        ? html`
-                            <p class="text-xs text-slate-400 mt-3 line-clamp-3 bg-slate-900/50 p-2.5 rounded-lg border border-slate-800/80">
-                              ${site.notes}
-                            </p>
-                          `
-                        : ''}
                     </div>
+                  `
+                )}
+              </div>
+            `}
+      </section>
 
-                    <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                      <a
-                        href="/events/new?launch_site_id=${site.id}"
-                        class="text-slate-400 hover:text-slate-200 transition-colors"
-                      >
-                        + Schedule Event
-                      </a>
-                      <a
-                        href="/sites/${site.id}"
-                        class="text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1"
-                      >
-                        View Site &rarr;
-                      </a>
-                    </div>
-                  </div>
-                `
-              )}
+      <!-- Section 2: Storage Sites -->
+      <section id="storage-sites" class="space-y-6 pt-6 border-t border-slate-800">
+        <!-- Header with Action -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-800">
+          <div>
+            <h2 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <span>🏰</span> Storage Sites
+            </h2>
+            <p class="text-sm text-slate-400 mt-1">
+              Physical explosive storage facilities, workshop magazines, and regulatory permit compliance.
+            </p>
+          </div>
+          <div class="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+            <a
+              href="/sites/storage-sites/new"
+              class="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors shadow-sm"
+            >
+              <span class="text-base leading-none font-bold">+</span>
+              <span>Add Storage Site</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Statutory Propellant Storage Guidelines Callout -->
+        <div class="rounded-xl bg-slate-850/80 border border-slate-800 p-4">
+          <div class="flex items-start gap-3">
+            <span class="text-xl flex-shrink-0">⚖️</span>
+            <div class="text-xs text-slate-300 space-y-1">
+              <p class="font-semibold text-slate-200">Statutory Propellant Storage Guidelines (South Australia & General):</p>
+              <p class="text-slate-400">
+                Storage capacity up to <strong>3.0 kg</strong> net propellant mass is exempt from statutory permits for authorized hobbyists.
+                Storage capacity between <strong>3.0 kg and 60.0 kg</strong> requires a registered <strong>Storage Permit</strong>.
+                Storage capacity exceeding <strong>60.0 kg</strong> requires an approved <strong>Magazine Permit</strong>.
+              </p>
             </div>
-          `}
+          </div>
+        </div>
+
+        <!-- Storage Sites Table / List -->
+        ${storageSites.length === 0
+          ? html`
+              <div class="text-center py-12 px-4 rounded-2xl bg-slate-850/50 border border-dashed border-slate-800">
+                <div class="text-4xl mb-3">📦</div>
+                <h3 class="text-lg font-semibold text-white">No Storage Sites Configured</h3>
+                <p class="text-sm text-slate-400 max-w-md mx-auto mt-1 mb-6">
+                  Register your physical explosives magazines, workshop storage cabinets, or range transport boxes to manage propellant limits.
+                </p>
+                <a
+                  href="/sites/storage-sites/new"
+                  class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm gap-1.5"
+                >
+                  <span>+</span>
+                  <span>Register First Storage Site</span>
+                </a>
+              </div>
+            `
+          : html`
+              <div class="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 shadow-md">
+                <table class="min-w-full divide-y divide-slate-800 text-left text-sm">
+                  <thead class="bg-slate-950/80 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    <tr>
+                      <th scope="col" class="py-3.5 pl-4 pr-3 sm:pl-6">Site Name & Location</th>
+                      <th scope="col" class="px-3 py-3.5">Capacity (kg)</th>
+                      <th scope="col" class="px-3 py-3.5">Permit Status</th>
+                      <th scope="col" class="px-3 py-3.5 hidden md:table-cell">Notes</th>
+                      <th scope="col" class="py-3.5 pl-3 pr-4 sm:pr-6 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800/60">
+                    ${storageSites.map(
+                      (site) => html`
+                        <tr class="hover:bg-slate-800/40 transition-colors">
+                          <td class="py-4 pl-4 pr-3 sm:pl-6">
+                            <a href="/sites/storage-sites/${site.id}" class="font-semibold text-white hover:text-brand-400 transition-colors">
+                              ${site.name}
+                            </a>
+                            ${site.location
+                              ? html`<div class="text-xs text-slate-400 mt-0.5 flex items-center gap-1"><span>📍</span><span>${site.location}</span></div>`
+                              : html`<div class="text-xs text-slate-500 italic mt-0.5">Location unlisted</div>`}
+                          </td>
+                          <td class="px-3 py-4 whitespace-nowrap">
+                            <span class="font-mono font-bold text-white text-base">${site.capacityKg.toFixed(2)}</span>
+                            <span class="text-xs text-slate-400 ml-1">kg</span>
+                          </td>
+                          <td class="px-3 py-4 whitespace-nowrap">
+                            ${formatStoragePermitBadge(site.capacityKg, site.permitNumber)}
+                          </td>
+                          <td class="px-3 py-4 text-xs text-slate-400 max-w-xs truncate hidden md:table-cell">
+                            ${site.notes || '—'}
+                          </td>
+                          <td class="py-4 pl-3 pr-4 sm:pr-6 text-right whitespace-nowrap text-xs font-semibold">
+                            <a href="/sites/storage-sites/${site.id}" class="text-brand-400 hover:text-brand-300 mr-3">View</a>
+                            <a href="/sites/storage-sites/${site.id}/edit" class="text-slate-300 hover:text-white mr-3">Edit</a>
+                            <form method="POST" action="/sites/storage-sites/${site.id}/delete" class="inline" onsubmit="return confirm('Are you sure you want to delete this storage site?');">
+                              <button type="submit" class="text-rose-400 hover:text-rose-300 transition-colors cursor-pointer">Delete</button>
+                            </form>
+                          </td>
+                        </tr>
+                      `,
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            `}
+      </section>
     </div>
   `
 
   return pageLayout({
-    title: 'Launch Sites',
+    title: 'Sites',
     activeTab: 'sites',
     content,
     user,

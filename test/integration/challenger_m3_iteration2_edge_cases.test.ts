@@ -243,7 +243,7 @@ describe('Challenger M3 Iteration 2: Query Edge Cases & Route Preservation', () 
 
       assertHtmlResponse(res, 200)
       const html = await res.text()
-      assertContains(html, 'Propellant Storage Sites & Magazines')
+      assertContains(html, 'Storage Sites')
       assertContains(html, 'E2E Storage Site')
     })
 
@@ -258,7 +258,7 @@ describe('Challenger M3 Iteration 2: Query Edge Cases & Route Preservation', () 
 
       assertHtmlResponse(res, 200)
       const html = await res.text()
-      assertContains(html, 'Register New Storage Site / Magazine')
+      assertContains(html, 'Register New Storage Site')
       assertContains(html, 'capacity_kg')
     })
 

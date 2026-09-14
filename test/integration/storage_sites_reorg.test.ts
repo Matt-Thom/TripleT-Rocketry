@@ -52,11 +52,11 @@ describe('Requirement R3: Propellant Storage Sites Reorganization', () => {
       const html = await res.text()
 
       // Header and content
-      assertContains(html, 'Propellant Storage Sites & Magazines')
+      assertContains(html, 'Storage Sites')
       assertContains(html, 'Monarto Range Magazine Alpha')
       assertContains(html, 'Range Bunker 1')
       assertContains(html, '2.50')
-      assertContains(html, 'Hobby Exempt (≤ 3.0 kg)')
+      assertContains(html, 'Exempt (≤ 3.0 kg)')
 
       // Back-link points to Sites Hub
       assertContains(html, 'href="/sites"')
@@ -190,7 +190,7 @@ describe('Requirement R3: Propellant Storage Sites Reorganization', () => {
       expect(site.name).toBe('API JSON Magazine')
     })
 
-    it('1.7: POST /sites/storage-sites validates name and SafeWork SA permit requirement (>3.0 kg)', async () => {
+    it('1.7: POST /sites/storage-sites validates name and allows capacity > 3.0 kg without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -205,16 +205,14 @@ describe('Requirement R3: Propellant Storage Sites Reorganization', () => {
       const htmlNoName = await resNoName.text()
       assertContains(htmlNoName, 'Storage site name is required')
 
-      // Capacity > 3.0 without permit
+      // Capacity > 3.0 without permit succeeds without hard limiting
       const resOverLimit = await fetchPostForm(
         '/sites/storage-sites',
         { name: 'Over Limit Magazine', capacity_kg: 3.5, permit_number: '' },
         { Cookie: `triplet_session=${token}` },
         { redirect: 'manual' },
       )
-      expect(resOverLimit.status).toBe(400)
-      const htmlOverLimit = await resOverLimit.text()
-      assertContains(htmlOverLimit, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect(resOverLimit.status).toBe(303)
     })
 
     it('1.8: GET /sites/storage-sites/:id displays detail view with Sites breadcrumbs', async () => {
@@ -444,7 +442,7 @@ describe('Requirement R3: Propellant Storage Sites Reorganization', () => {
 
       assertHtmlResponse(res, 200)
       const html = await res.text()
-      assertContains(html, 'Propellant Storage Sites & Magazines')
+      assertContains(html, 'Storage Sites')
     })
 
     it('2.5: GET /inventory/storage-sites/:id returns HTTP 301 redirect to /sites/storage-sites/:id', async () => {
@@ -600,10 +598,10 @@ describe('Requirement R3: Propellant Storage Sites Reorganization', () => {
       const html = await res.text()
 
       expect(html).toContain('href="/sites/storage-sites"')
-      assertContains(html, 'Propellant Storage & Magazines')
+      assertContains(html, 'Storage Sites')
     })
 
-    it('4.2: Inventory hub GET /inventory links to /sites/storage-sites', async () => {
+    it('4.2: Inventory hub GET /inventory does NOT link to storage sites (removed per design)', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -614,7 +612,7 @@ describe('Requirement R3: Propellant Storage Sites Reorganization', () => {
       assertHtmlResponse(res, 200)
       const html = await res.text()
 
-      expect(html).toContain('href="/sites/storage-sites"')
+      assertNotContains(html, 'href="/sites/storage-sites"')
       assertNotContains(html, 'href="/inventory/storage-sites"')
     })
   })
