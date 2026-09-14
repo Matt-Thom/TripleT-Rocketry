@@ -188,9 +188,8 @@ authRouter.get('/login', async (c) => {
 
   const redirectUrl = sanitizeRedirect(c.req.query('redirect'), '/')
   const error = c.req.query('error') || null
-  const cfAccessEmail = c.req.header('cf-access-authenticated-user-email')?.trim() || null
 
-  const view = loginView({ redirectUrl, error, cfAccessEmail })
+  const view = loginView({ redirectUrl, error })
   const html = pageLayout({
     title: 'Sign In',
     activeTab: 'dashboard',
@@ -199,80 +198,6 @@ authRouter.get('/login', async (c) => {
   })
 
   return c.html(html)
-})
-
-/**
- * POST /auth/cf-access-login - Explicitly sign in using Cloudflare Access identity.
- * Clears logged-out marker and issues D1 session cookie.
- */
-authRouter.post('/auth/cf-access-login', async (c) => {
-  const cfAccessEmail = c.req.header('cf-access-authenticated-user-email')?.trim()
-  const body = (await c.req.parseBody().catch(() => ({}))) as Record<string, any>
-  const redirectUrl = sanitizeRedirect(body.redirect, '/')
-
-  if (!cfAccessEmail) {
-    return c.redirect(`/login?error=${encodeURIComponent('No Cloudflare Access identity detected')}`, 302)
-  }
-
-  const db = drizzle(c.env.DB, { schema })
-  let [user] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.email, cfAccessEmail.toLowerCase()))
-    .limit(1)
-
-  if (!user) {
-    const defaultPasswordHash = await hashPassword(crypto.randomUUID())
-    const [newUser] = await db
-      .insert(schema.users)
-      .values({
-        email: cfAccessEmail.toLowerCase(),
-        displayName: cfAccessEmail.split('@')[0],
-        passwordHash: defaultPasswordHash,
-        isActive: true,
-        role: 'flyer',
-        regulatoryRegion: 'SA',
-      })
-      .returning()
-
-    await db.insert(schema.certifications).values({
-      userId: newUser.id,
-      certifyingBody: 'TRA',
-      level: 2,
-      certNumber: 'TRA-AU-CF',
-      expiresOn: '2028-12-31',
-    })
-    user = newUser
-  }
-
-  const maxAge = getSessionMaxAge(c.env)
-  const tokenTimestamp = await getSafeSessionTimestamp(db, user.id)
-  const token = await signSession(user.id, c.env.AUTH_SECRET, tokenTimestamp)
-  const sessionId = crypto.randomUUID()
-  const now = Date.now()
-  const expiresAt = now + maxAge * 1000
-  await db
-    .insert(schema.sessions)
-    .values({
-      id: sessionId,
-      userId: user.id,
-      token,
-      expiresAt,
-      createdAt: now,
-    })
-    .onConflictDoUpdate({
-      target: schema.sessions.token,
-      set: { expiresAt, createdAt: now },
-    })
-
-  await db.delete(schema.siteSettings).where(eq(schema.siteSettings.key, `revoked_session:${token}`)).catch(() => {})
-
-  const cookie = createSessionCookie(token, maxAge)
-  const clearLoggedOut = createClearLoggedOutCookie()
-
-  c.header('Set-Cookie', cookie)
-  c.header('Set-Cookie', clearLoggedOut, { append: true })
-  return c.redirect(redirectUrl, 302)
 })
 
 /**

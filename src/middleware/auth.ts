@@ -3,12 +3,11 @@
  *
  * Secures all application routes, supporting:
  * 1. Initial setup wizard detection and redirection for unconfigured instances.
- * 2. Cloudflare Access Single Sign-On via `Cf-Access-Authenticated-User-Email`.
- * 3. Server-side session verification in D1 `sessions` table with HMAC signature checking.
- * 4. Invalidation of logged-out and expired sessions with immediate route rejection.
- * 5. Role-based user context attachment (`c.set('user', ...)`).
- * 6. Cache-Control: no-store header to prevent bfcache disclosure of protected routes.
- * 7. Content-negotiated unauthorized response (redirect to /login for HTML, 401 for API).
+ * 2. Server-side session verification in D1 `sessions` table with HMAC signature checking.
+ * 3. Invalidation of logged-out and expired sessions with immediate route rejection.
+ * 4. Role-based user context attachment (`c.set('user', ...)`).
+ * 5. Cache-Control: no-store header to prevent bfcache disclosure of protected routes.
+ * 6. Content-negotiated unauthorized response (redirect to /login for HTML, 401 for API).
  */
 
 import type { Context, Next } from 'hono'
@@ -39,7 +38,6 @@ const PUBLIC_PATHS = [
   '/auth/logout',
   '/auth/signout',
   '/auth/sign-out',
-  '/auth/cf-access-login',
   '/health',
   '/ready',
   '/setup',
@@ -382,45 +380,7 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 3. Cloudflare Access SSO header (strictly ignored if user is logged out or session is marked invalid)
-  if (!hasLoggedOutMarker && !invalidSession && !flyer) {
-    const cfAccessEmail = c.req.header('cf-access-authenticated-user-email')?.trim()
-    if (cfAccessEmail) {
-      const [existing] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.email, cfAccessEmail.toLowerCase()))
-
-      if (existing) {
-        flyer = await getActiveFlyer(db, existing.id)
-      } else {
-        const defaultPasswordHash = await hashPassword(crypto.randomUUID())
-        const [newUser] = await db
-          .insert(schema.users)
-          .values({
-            email: cfAccessEmail.toLowerCase(),
-            displayName: cfAccessEmail.split('@')[0],
-            passwordHash: defaultPasswordHash,
-            isActive: true,
-            role: 'flyer',
-            regulatoryRegion: 'SA',
-          })
-          .returning()
-
-        await db.insert(schema.certifications).values({
-          userId: newUser.id,
-          certifyingBody: 'TRA',
-          level: 2,
-          certNumber: 'TRA-AU-CF',
-          expiresOn: '2028-12-31',
-        })
-
-        flyer = await getActiveFlyer(db, newUser.id)
-      }
-    }
-  }
-
-  // 4. Authorization Bearer header (RFC 6750 case-insensitive, takes precedence over stale/logged-out cookie states)
+  // 3. Authorization Bearer header (RFC 6750 case-insensitive, takes precedence over stale/logged-out cookie states)
   if (!flyer) {
     const authHeader = c.req.header('authorization') || ''
     const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
@@ -446,7 +406,7 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 5. Direct developer / test flyer header (strictly guarded to test and local environments - BL-01, ignored if logged out)
+  // 4. Direct developer / test flyer header (strictly guarded to test and local environments - BL-01, ignored if logged out)
   if (isTestOrLocal && !hasLoggedOutMarker && !flyer && !invalidSession) {
     const headerUserId = c.req.header('x-flyer-id')
     const headerUserEmail = c.req.header('x-flyer-email')

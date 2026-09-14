@@ -186,7 +186,7 @@ describe('Requirement R1: Strict Unauthenticated Route Gating', () => {
       expect(res.headers.get('location')).toBe('/login?redirect=%2Fevents')
     })
 
-    it('strictly prevents Cloudflare Access auto-login when triplet_logged_out=1 is present', async () => {
+    it('strictly ignores Cloudflare Access headers and enforces email/password or passkey authentication', async () => {
       const userId = crypto.randomUUID()
       await env.DB.prepare(
         "INSERT INTO users (id, email, display_name, password_hash, is_active, role, regulatory_region, created_at, updated_at) VALUES (?, 'cf-pilot@rocketry.local', 'CF Pilot', 'hash', 1, 'flyer', 'SA', ?, ?)",
@@ -199,34 +199,44 @@ describe('Requirement R1: Strict Unauthenticated Route Gating', () => {
           headers: {
             Accept: 'text/html',
             'cf-access-authenticated-user-email': 'cf-pilot@rocketry.local',
-            Cookie: 'triplet_logged_out=1',
           },
           redirect: 'manual',
         })
 
-        // Must NOT return 200 or user data
+        // Must NOT return 200 or user data - must redirect to /login
         expect(res.status).toBe(302)
         expect(res.headers.get('location')).toBe(`/login?redirect=${encodeURIComponent(path)}`)
       }
     })
 
-    it('allows explicit 1-click Cloudflare Access login via POST /auth/cf-access-login', async () => {
+    it('does NOT render Cloudflare Access option on /login page', async () => {
+      const res = await SELF.fetch('https://example.com/login', {
+        headers: {
+          Accept: 'text/html',
+          'cf-access-authenticated-user-email': 'cf-pilot@rocketry.local',
+        },
+      })
+
+      expect(res.status).toBe(200)
+      const html = await res.text()
+      expect(html).not.toContain('Sign in with Cloudflare Access')
+      expect(html).not.toContain('/auth/cf-access-login')
+      expect(html).toContain('Sign in with Passkey')
+      expect(html).toContain('Email Address')
+      expect(html).toContain('Password')
+    })
+
+    it('returns 404 for removed endpoint POST /auth/cf-access-login', async () => {
       const res = await SELF.fetch('https://example.com/auth/cf-access-login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'cf-access-authenticated-user-email': 'cf-pilot@rocketry.local',
-          Cookie: 'triplet_logged_out=1',
         },
         body: 'redirect=%2Fflights',
-        redirect: 'manual',
       })
 
-      expect(res.status).toBe(302)
-      expect(res.headers.get('location')).toBe('/flights')
-      const setCookies = res.headers.getSetCookie?.() || [res.headers.get('set-cookie') || '']
-      expect(setCookies.some((c) => c.includes('triplet_session='))).toBe(true)
-      expect(setCookies.some((c) => c.includes('triplet_logged_out=;') && c.includes('Max-Age=0'))).toBe(true)
+      expect(res.status).toBe(404)
     })
   })
 

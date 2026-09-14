@@ -8,12 +8,10 @@ import type { HtmlEscapedString } from 'hono/utils/html'
 interface LoginViewOptions {
   redirectUrl?: string
   error?: string | null
-  cfAccessEmail?: string | null
 }
 
-
 export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | Promise<HtmlEscapedString> {
-  const { redirectUrl = '/', error = null, cfAccessEmail = null } = options
+  const { redirectUrl = '/', error = null } = options
   const safeRedirect = redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/'
 
   return html`
@@ -170,25 +168,6 @@ export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | P
             }
           });
         </script>
-
-        ${
-          cfAccessEmail
-            ? html`
-              <div class="mt-4 pt-4 border-t border-slate-800">
-                <form method="POST" action="/auth/cf-access-login">
-                  <input type="hidden" name="redirect" value="${safeRedirect}">
-                  <button
-                    type="submit"
-                    class="w-full py-2.5 px-4 bg-sky-950/60 hover:bg-sky-900/60 border border-sky-700/60 text-sky-200 hover:text-white font-semibold rounded-lg transition-colors text-sm flex items-center justify-center gap-2 shadow-sm"
-                  >
-                    <span class="text-base">☁️</span>
-                    <span>Sign in with Cloudflare Access (${cfAccessEmail})</span>
-                  </button>
-                </form>
-              </div>
-            `
-            : ''
-        }
 
         <div class="mt-6 pt-4 border-t border-slate-800 text-center">
           <p class="text-xs text-slate-400">
