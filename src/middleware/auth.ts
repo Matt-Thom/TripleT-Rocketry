@@ -27,6 +27,7 @@ import {
   getSessionMaxAge,
   SESSION_MAX_AGE_SECONDS,
   resolveAuthSecret,
+  DEFAULT_AUTH_SECRET,
 } from '../services/auth'
 
 const PUBLIC_PATHS = [
@@ -123,7 +124,10 @@ async function validateSessionToken(
   }
 
   // 2. Cryptographic signature and lifetime verification
-  const verifiedUserId = await verifySession(cleanToken, authSecret, maxAgeSeconds)
+  let verifiedUserId = authSecret ? await verifySession(cleanToken, authSecret, maxAgeSeconds) : null
+  if (!verifiedUserId && isTestOrLocal && authSecret !== DEFAULT_AUTH_SECRET) {
+    verifiedUserId = await verifySession(cleanToken, DEFAULT_AUTH_SECRET, maxAgeSeconds)
+  }
   if (!verifiedUserId) {
     // Purge expired or invalid signature session from D1 if present (do not pollute site_settings on arbitrary garbage)
     await db.delete(schema.sessions).where(eq(schema.sessions.token, cleanToken)).catch(() => {})
@@ -267,6 +271,12 @@ async function validateSessionToken(
 
 export async function authMiddleware(c: Context, next: Next) {
   const path = c.req.path
+  // 0. Fast-path: pure infrastructure probes do not require session or auth handling
+  if (path === '/health' || path === '/ready') {
+    await next()
+    return
+  }
+
   const db = drizzle(c.env.DB, { schema })
 
   // 1. Initial Setup Wizard & Unconfigured Instance Detection (R1)
@@ -295,7 +305,14 @@ export async function authMiddleware(c: Context, next: Next) {
   let invalidSession = false
   const hasLoggedOutMarker = cookies.triplet_logged_out === '1'
   const maxAgeSeconds = getSessionMaxAge(c.env)
-  const authSecret = resolveAuthSecret(c.env)
+  let authSecret: string | undefined
+  try {
+    authSecret = resolveAuthSecret(c.env)
+  } catch (err) {
+    if (!isPublicPath(path)) {
+      throw err
+    }
+  }
 
   // 2. Cookie session with D1 server-side validation (checks all candidates if multiple triplet_session cookies are sent)
   if (cookies.triplet_session !== undefined) {
