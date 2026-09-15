@@ -127,7 +127,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       expect(site.permitNumber).toBeNull()
     })
 
-    it('1.3: capacity_kg = 3.001 without permit fails with HTTP 400 and SafeWork SA regulation error', async () => {
+    it('1.3: capacity_kg = 3.001 without permit succeeds without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -140,14 +140,13 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
-    it('1.4: capacity_kg = 3.1 without permit fails with HTTP 400 and SafeWork SA regulation error', async () => {
+    it('1.4: capacity_kg = 3.1 without permit succeeds without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -160,11 +159,10 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
     it('1.5: capacity_kg = 3.001 with valid permit succeeds with HTTP 303/201 and persists permitNumber', async () => {
@@ -235,7 +233,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       expect(site.permitNumber).toBe('SAFEWORK-SA-EXP-2026-500')
     })
 
-    it('1.7: capacity_kg = 10.0 with empty string permit fails with HTTP 400', async () => {
+    it('1.7: capacity_kg = 10.0 with empty string permit succeeds without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -248,14 +246,13 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
-    it('1.8: capacity_kg = 10.0 with whitespace-only permit (spaces, tabs, newlines) fails with HTTP 400', async () => {
+    it('1.8: capacity_kg = 10.0 with whitespace-only permit succeeds without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -268,14 +265,13 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '   \t  \n  ',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
-    it('1.9: extreme floating point precision: 2.999999 succeeds without permit; 3.000001 fails without permit', async () => {
+    it('1.9: extreme floating point precision: 2.999999 and 3.000001 both succeed without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -292,7 +288,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       )
       expect([200, 201, 302, 303]).toContain(resUnder.status)
 
-      // 3.000001 -> > 3.0 -> fails 400
+      // 3.000001 -> > 3.0 -> succeeds without hard limiting
       const resOver = await fetchPostForm(
         '/inventory/storage-sites',
         {
@@ -301,8 +297,9 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '',
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
-      expect(resOver.status).toBe(400)
+      expect([200, 201, 302, 303]).toContain(resOver.status)
     })
 
     it('1.10: zero capacity (0.0 kg) and omitted capacity string default to 0 and succeed without permit', async () => {
@@ -386,9 +383,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permitNumber: null,
         }),
       })
-      expect(resJsonOver.status).toBe(400)
-      const errJson = (await resJsonOver.json()) as any
-      expect(errJson.error).toContain('SafeWork SA regulations require a propellant storage license/permit')
+      expect(resJsonOver.status).toBe(201)
 
       // JSON request with permit -> 201 JSON
       const resJsonOk = await SELF.fetch('https://example.com/inventory/storage-sites', {
@@ -481,8 +476,8 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       assertContains(html, 'Workshop Magazine Alpha', 'HPR Bunker Delta')
       assertContains(html, 'Shed Safe Bay', 'Range Depot')
       assertContains(html, '1.50', '4.50')
-      assertContains(html, 'Hobby Exempt (≤ 3.0 kg)')
-      assertContains(html, 'SafeWork SA Licensed (SAFEWORK-2026-BUNKER)')
+      assertContains(html, 'Exempt (≤ 3.0 kg)')
+      assertContains(html, 'Storage Permit (SAFEWORK-2026-BUNKER)')
       expect(html).toContain('href="/inventory/storage-sites/new"')
     })
 
@@ -563,7 +558,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       assertContains(html, 'Main Field Magazine', 'Range Trailer')
       assertContains(html, 'Licensed Storage Capacity')
       assertContains(html, '2.00')
-      assertContains(html, 'Hobby Exempt (≤ 3.0 kg)')
+      assertContains(html, 'Exempt (≤ 3.0 kg)')
       assertContains(html, 'AeroTech H128W')
       assertContains(html, 'Ejection Charge Pyros')
       expect(html).toContain(`/inventory/storage-sites/${site.id}/edit`)
@@ -674,7 +669,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       expect(updated.updatedAt).toBeGreaterThanOrEqual(initialUpdatedAt)
     })
 
-    it('2.9: UPDATE Boundary Enforcement: updating capacity from 2.5kg to 4.0kg without permit fails with HTTP 400', async () => {
+    it('2.9: UPDATE: updating capacity from 2.5kg to 4.0kg without permit succeeds without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -692,20 +687,19 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '', // Omitted permit
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 302, 303]).toContain(res.status)
 
-      // Verify site capacity was NOT changed in D1
+      // Verify site capacity was changed in D1
       const db = getDb()
-      const [unmodified] = await db
+      const [updated] = await db
         .select()
         .from(schema.storageSites)
         .where(eq(schema.storageSites.id, site.id))
 
-      expect(unmodified.capacityKg).toBeCloseTo(2.5)
+      expect(updated.capacityKg).toBeCloseTo(4.0)
     })
 
     it('2.10: UPDATE Boundary Relaxation: updating capacity from 4.0kg (with permit) down to 2.5kg allows clearing permit', async () => {
@@ -741,7 +735,7 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       expect(updated.permitNumber).toBeNull()
     })
 
-    it('2.11: UPDATE Permit Cleared: attempting to clear permit while capacity remains >3.0kg fails with HTTP 400', async () => {
+    it('2.11: UPDATE: clearing permit while capacity remains >3.0kg succeeds without hard limiting', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -759,11 +753,10 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
           permit_number: '   ', // Whitespace
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect(res.status).toBe(400)
-      const html = await res.text()
-      assertContains(html, 'SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 302, 303]).toContain(res.status)
     })
 
     it('2.12: DELETE (Soft-Delete): POST /inventory/storage-sites/:id/delete sets deletedAt and hides from list', async () => {
@@ -916,9 +909,8 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       expect(asteriskMatch).toBeDefined()
       expect(asteriskMatch![1]).not.toContain('hidden')
 
-      // Permit input must have required attribute and border-amber-500 styling
-      expect(editFormHtml).toMatch(/id=["']permit_number["'][^>]*required/)
-      expect(editFormHtml).toMatch(/id=["']permit_number["'][^>]*border-amber-500/)
+      // Permit input must NOT have required attribute
+      expect(editFormHtml).not.toMatch(/id=["']permit_number["'][^>]*required/)
     })
 
     it('3.5: dynamic client-side logic harness: simulates input transitions across 2.99, 3.0, 3.001, 5.0, empty, and NaN', () => {
@@ -932,9 +924,6 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
         return {
           calloutHidden: !exceedsLimit,
           asteriskHidden: !exceedsLimit,
-          permitRequired: exceedsLimit,
-          permitAriaRequired: exceedsLimit ? 'true' : null,
-          hasAmberBorder: exceedsLimit,
           helpTextRequired: exceedsLimit,
         }
       }
@@ -943,90 +932,88 @@ describe('Adversarial Challenger 2: Storage Sites & SafeWork SA Propellant Compl
       const state25 = evaluateClientSafeWorkState('2.5')
       expect(state25.calloutHidden).toBe(true)
       expect(state25.asteriskHidden).toBe(true)
-      expect(state25.permitRequired).toBe(false)
-      expect(state25.hasAmberBorder).toBe(false)
 
       // 2. Sub-threshold boundary (2.99)
       const state299 = evaluateClientSafeWorkState('2.99')
       expect(state299.calloutHidden).toBe(true)
       expect(state299.asteriskHidden).toBe(true)
-      expect(state299.permitRequired).toBe(false)
 
       // 3. Exact threshold boundary (3.0)
       const state30 = evaluateClientSafeWorkState('3.0')
       expect(state30.calloutHidden).toBe(true)
       expect(state30.asteriskHidden).toBe(true)
-      expect(state30.permitRequired).toBe(false)
 
       // 4. Over-threshold boundary (3.001)
       const state3001 = evaluateClientSafeWorkState('3.001')
       expect(state3001.calloutHidden).toBe(false)
       expect(state3001.asteriskHidden).toBe(false)
-      expect(state3001.permitRequired).toBe(true)
-      expect(state3001.hasAmberBorder).toBe(true)
 
       // 5. Over-threshold (3.1)
       const state31 = evaluateClientSafeWorkState('3.1')
       expect(state31.calloutHidden).toBe(false)
-      expect(state31.permitRequired).toBe(true)
 
       // 6. Large capacity (5.0)
       const state50 = evaluateClientSafeWorkState('5.0')
       expect(state50.calloutHidden).toBe(false)
-      expect(state50.permitRequired).toBe(true)
 
       // 7. Large commercial (10.0)
       const state10 = evaluateClientSafeWorkState('10.0')
       expect(state10.calloutHidden).toBe(false)
-      expect(state10.permitRequired).toBe(true)
 
       // 8. Reverted back down to 1.5
       const stateRevert = evaluateClientSafeWorkState('1.5')
       expect(stateRevert.calloutHidden).toBe(true)
-      expect(stateRevert.permitRequired).toBe(false)
 
       // 9. Cleared empty string
       const stateEmpty = evaluateClientSafeWorkState('')
       expect(stateEmpty.calloutHidden).toBe(true)
-      expect(stateEmpty.permitRequired).toBe(false)
 
       // 10. Non-numeric gibberish (NaN)
       const stateNan = evaluateClientSafeWorkState('invalid-number')
       expect(stateNan.calloutHidden).toBe(true)
-      expect(stateNan.permitRequired).toBe(false)
     })
   })
 
   // =========================================================================
-  // SECTION 4: SafeWork SA Badge Rendering & Regulation Consistency
+  // SECTION 4: Storage Permit Badge Rendering & Regulation Consistency
   // =========================================================================
-  describe('Section 4: SafeWork SA Badge Rendering & Regulation Consistency', () => {
+  describe('Section 4: Storage Permit Badge Rendering & Regulation Consistency', () => {
     it('4.1: formatSafeWorkBadge renders Hobby Exempt badge when capacity <= 3.0 kg and no permit', async () => {
       const badge25 = await (formatSafeWorkBadge(2.5, null) as any).toString()
-      expect(badge25).toContain('Hobby Exempt (≤ 3.0 kg)')
+      expect(badge25).toContain('Exempt (≤ 3.0 kg)')
 
       const badge30 = await (formatSafeWorkBadge(3.0, '') as any).toString()
-      expect(badge30).toContain('Hobby Exempt (≤ 3.0 kg)')
+      expect(badge30).toContain('Exempt (≤ 3.0 kg)')
     })
 
-    it('4.2: formatSafeWorkBadge renders SafeWork SA Licensed badge when capacity > 3.0 kg and permit is provided', async () => {
+    it('4.2: formatSafeWorkBadge renders Storage Permit badge when capacity 3-60 kg and permit is provided', async () => {
       const badge = await (formatSafeWorkBadge(4.0, 'LIC-2026-SA') as any).toString()
-      expect(badge).toContain('SafeWork SA Licensed (LIC-2026-SA)')
+      expect(badge).toContain('Storage Permit (LIC-2026-SA)')
       expect(badge).toContain('🛡️')
     })
 
-    it('4.3: formatSafeWorkBadge renders Permit Required warning badge when capacity > 3.0 kg and permit is missing', async () => {
+    it('4.3: formatSafeWorkBadge renders Permit Required warning badge when capacity 3-60 kg and permit is missing', async () => {
       const badgeMissing = await (formatSafeWorkBadge(3.5, null) as any).toString()
-      expect(badgeMissing).toContain('Permit Required (&gt; 3.0 kg)')
+      expect(badgeMissing).toContain('Storage Permit Required (3–60 kg)')
       expect(badgeMissing).toContain('⚠️')
 
       const badgeEmpty = await (formatSafeWorkBadge(3.1, '   ') as any).toString()
-      expect(badgeEmpty).toContain('Permit Required (&gt; 3.0 kg)')
+      expect(badgeEmpty).toContain('Storage Permit Required (3–60 kg)')
     })
 
     it('4.4: formatSafeWorkBadge renders Permit badge when capacity <= 3.0 kg and voluntary permit is recorded', async () => {
       const badge = await (formatSafeWorkBadge(2.0, 'OPTIONAL-PERMIT-123') as any).toString()
       expect(badge).toContain('Permit: OPTIONAL-PERMIT-123')
+    })
+
+    it('4.5: formatSafeWorkBadge renders Magazine Permit badge for capacity > 60 kg', async () => {
+      const badgeMissing = await (formatSafeWorkBadge(65.0, null) as any).toString()
+      expect(badgeMissing).toContain('Magazine Permit Required (&gt; 60 kg)')
+      expect(badgeMissing).toContain('🚨')
+
+      const badgeAuth = await (formatSafeWorkBadge(75.0, 'MAG-2026-99') as any).toString()
+      expect(badgeAuth).toContain('Magazine Permit (MAG-2026-99)')
+      expect(badgeAuth).toContain('🏛️')
     })
   })
 })

@@ -324,6 +324,7 @@ describe('Milestone 1 (R1): Launch Events Usability & Full Editing', () => {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Updated via JSON API',

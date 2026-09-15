@@ -85,20 +85,22 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
         <div class="flex items-center space-x-8">
-          <a href="/" class="flex items-center space-x-2 text-white font-bold text-lg hover:text-brand-400 transition-colors">
+          <a href="${user ? '/' : '/login'}" class="flex items-center space-x-2 text-white font-bold text-lg hover:text-brand-400 transition-colors">
             <span class="text-2xl">🚀</span>
             <span class="tracking-tight">TripleT-Rocketry</span>
           </a>
-          <nav class="hidden md:flex space-x-2" aria-label="Main navigation">
-            <a href="/" class="${desktopNavLinkClass('dashboard')}">Dashboard</a>
-            <a href="/flights" class="${desktopNavLinkClass('flights')}">Flights</a>
-            <a href="/rockets" class="${desktopNavLinkClass('rockets')}">Rockets</a>
-            <a href="/motors" class="${desktopNavLinkClass('motors')}">Motors</a>
-            <a href="/inventory" class="${desktopNavLinkClass('inventory')}">Inventory</a>
-            <a href="/sites" class="${desktopNavLinkClass('sites')}">Sites</a>
-            <a href="/events" class="${desktopNavLinkClass('events')}">Events</a>
-            ${user?.role === 'admin' ? html`<a href="/admin/users" class="${desktopNavLinkClass('admin')}">Admin</a>` : ''}
-          </nav>
+          ${user ? html`
+            <nav class="hidden md:flex space-x-2" aria-label="Main navigation">
+              <a href="/" class="${desktopNavLinkClass('dashboard')}">Dashboard</a>
+              <a href="/flights" class="${desktopNavLinkClass('flights')}">Flights</a>
+              <a href="/rockets" class="${desktopNavLinkClass('rockets')}">Rockets</a>
+              <a href="/motors" class="${desktopNavLinkClass('motors')}">Motors</a>
+              <a href="/inventory" class="${desktopNavLinkClass('inventory')}">Inventory</a>
+              <a href="/sites" class="${desktopNavLinkClass('sites')}">Sites</a>
+              <a href="/events" class="${desktopNavLinkClass('events')}">Events</a>
+              ${user?.role === 'admin' ? html`<a href="/admin/users" class="${desktopNavLinkClass('admin')}">Admin</a>` : ''}
+            </nav>
+          ` : ''}
         </div>
 
         <div class="flex items-center space-x-4">
@@ -139,7 +141,7 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
 
   <!-- Mobile Top Bar (< 768px) -->
   <div class="md:hidden bg-slate-950/80 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
-    <a href="/" class="flex items-center space-x-2 font-bold text-white">
+    <a href="${user ? '/' : '/login'}" class="flex items-center space-x-2 font-bold text-white">
       <span class="text-xl">🚀</span>
       <span>TripleT</span>
     </a>
@@ -163,42 +165,44 @@ export function pageLayout(options: PageLayoutOptions): HtmlEscapedString | Prom
   </main>
 
   <!-- Mobile Range Companion Bottom Navigation (< 768px) -->
-  <nav class="md:hidden fixed bottom-0 inset-x-0 bg-slate-950/95 border-t border-slate-800 backdrop-blur z-50 px-2 py-1 flex justify-around items-center" aria-label="Mobile navigation">
-    <a href="/" class="${mobileNavLinkClass('dashboard')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">📊</span>
-      <span>Dashboard</span>
-    </a>
-    <a href="/flights" class="${mobileNavLinkClass('flights')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">🚀</span>
-      <span>Flights</span>
-    </a>
-    <a href="/rockets" class="${mobileNavLinkClass('rockets')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">🛰️</span>
-      <span>Rockets</span>
-    </a>
-    <a href="/motors" class="${mobileNavLinkClass('motors')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">⚡</span>
-      <span>Motors</span>
-    </a>
-    <a href="/inventory" class="${mobileNavLinkClass('inventory')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">📦</span>
-      <span>Inventory</span>
-    </a>
-    <a href="/sites" class="${mobileNavLinkClass('sites')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">📍</span>
-      <span>Sites</span>
-    </a>
-    <a href="/profile" class="${mobileNavLinkClass('profile')} flex-1 text-center">
-      <span class="text-lg leading-none mb-1 block">👤</span>
-      <span>Profile</span>
-    </a>
-    ${user?.role === 'admin' ? html`
-      <a href="/admin/users" class="${mobileNavLinkClass('admin')} flex-1 text-center">
-        <span class="text-lg leading-none mb-1 block">⚙️</span>
-        <span>Admin</span>
+  ${user ? html`
+    <nav class="md:hidden fixed bottom-0 inset-x-0 bg-slate-950/95 border-t border-slate-800 backdrop-blur z-50 px-2 py-1 flex justify-around items-center" aria-label="Mobile navigation">
+      <a href="/" class="${mobileNavLinkClass('dashboard')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">📊</span>
+        <span>Dashboard</span>
       </a>
-    ` : ''}
-  </nav>
+      <a href="/flights" class="${mobileNavLinkClass('flights')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">🚀</span>
+        <span>Flights</span>
+      </a>
+      <a href="/rockets" class="${mobileNavLinkClass('rockets')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">🛰️</span>
+        <span>Rockets</span>
+      </a>
+      <a href="/motors" class="${mobileNavLinkClass('motors')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">⚡</span>
+        <span>Motors</span>
+      </a>
+      <a href="/inventory" class="${mobileNavLinkClass('inventory')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">📦</span>
+        <span>Inventory</span>
+      </a>
+      <a href="/sites" class="${mobileNavLinkClass('sites')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">📍</span>
+        <span>Sites</span>
+      </a>
+      <a href="/profile" class="${mobileNavLinkClass('profile')} flex-1 text-center">
+        <span class="text-lg leading-none mb-1 block">👤</span>
+        <span>Profile</span>
+      </a>
+      ${user?.role === 'admin' ? html`
+        <a href="/admin/users" class="${mobileNavLinkClass('admin')} flex-1 text-center">
+          <span class="text-lg leading-none mb-1 block">⚙️</span>
+          <span>Admin</span>
+        </a>
+      ` : ''}
+    </nav>
+  ` : ''}
 
 </body>
 </html>`

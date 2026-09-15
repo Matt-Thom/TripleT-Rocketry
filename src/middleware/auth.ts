@@ -3,12 +3,11 @@
  *
  * Secures all application routes, supporting:
  * 1. Initial setup wizard detection and redirection for unconfigured instances.
- * 2. Cloudflare Access Single Sign-On via `Cf-Access-Authenticated-User-Email`.
- * 3. Server-side session verification in D1 `sessions` table with HMAC signature checking.
- * 4. Invalidation of logged-out and expired sessions with immediate route rejection.
- * 5. Role-based user context attachment (`c.set('user', ...)`).
- * 6. Cache-Control: no-store header to prevent bfcache disclosure of protected routes.
- * 7. Content-negotiated unauthorized response (redirect to /login for HTML, 401 for API).
+ * 2. Server-side session verification in D1 `sessions` table with HMAC signature checking.
+ * 3. Invalidation of logged-out and expired sessions with immediate route rejection.
+ * 4. Role-based user context attachment (`c.set('user', ...)`).
+ * 5. Cache-Control: no-store header to prevent bfcache disclosure of protected routes.
+ * 6. Content-negotiated unauthorized response (redirect to /login for HTML, 401 for API).
  */
 
 import type { Context, Next } from 'hono'
@@ -26,6 +25,8 @@ import {
   createLoggedOutMarkerCookie,
   getSessionMaxAge,
   SESSION_MAX_AGE_SECONDS,
+  resolveAuthSecret,
+  DEFAULT_AUTH_SECRET,
 } from '../services/auth'
 
 const PUBLIC_PATHS = [
@@ -42,11 +43,43 @@ const PUBLIC_PATHS = [
   '/setup',
   '/auth/webauthn/login-options',
   '/auth/webauthn/login-verify',
+  '/static',
+  '/favicon.ico',
 ]
 
 export function isPublicPath(path: string): boolean {
   if (path === '/') return false
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'))
+}
+
+const KNOWN_PROTECTED_PREFIXES = [
+  '/flights',
+  '/rockets',
+  '/motors',
+  '/inventory',
+  '/sites',
+  '/events',
+  '/admin',
+  '/profile',
+  '/settings',
+  '/dashboard',
+  '/auth/switch',
+  '/auth/webauthn/register-options',
+  '/auth/webauthn/register-verify',
+  '/auth/webauthn/credentials',
+]
+
+export function isKnownProtectedPath(path: string): boolean {
+  if (path === '/' || path === '/dashboard') return true
+  if (path === '/auth/switch' || path.startsWith('/auth/switch/')) return true
+  if (
+    path.startsWith('/auth/webauthn/register-') ||
+    path === '/auth/webauthn/credentials' ||
+    path.startsWith('/auth/webauthn/credentials/')
+  ) {
+    return true
+  }
+  return KNOWN_PROTECTED_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))
 }
 
 export function isAllowedWhenUnconfigured(path: string): boolean {
@@ -71,8 +104,11 @@ async function isSiteConfigured(db: DrizzleD1Database<any>): Promise<boolean> {
       .where(eq(schema.siteSettings.key, 'setup_completed'))
       .limit(1)
     return row?.value === 'true'
-  } catch {
-    return false
+  } catch (err: any) {
+    if (String(err).includes('no such table')) {
+      return false
+    }
+    throw err
   }
 }
 
@@ -122,7 +158,10 @@ async function validateSessionToken(
   }
 
   // 2. Cryptographic signature and lifetime verification
-  const verifiedUserId = await verifySession(cleanToken, authSecret, maxAgeSeconds)
+  let verifiedUserId = authSecret ? await verifySession(cleanToken, authSecret, maxAgeSeconds) : null
+  if (!verifiedUserId && isTestOrLocal && authSecret !== DEFAULT_AUTH_SECRET) {
+    verifiedUserId = await verifySession(cleanToken, DEFAULT_AUTH_SECRET, maxAgeSeconds)
+  }
   if (!verifiedUserId) {
     // Purge expired or invalid signature session from D1 if present (do not pollute site_settings on arbitrary garbage)
     await db.delete(schema.sessions).where(eq(schema.sessions.token, cleanToken)).catch(() => {})
@@ -266,6 +305,12 @@ async function validateSessionToken(
 
 export async function authMiddleware(c: Context, next: Next) {
   const path = c.req.path
+  // 0. Fast-path: pure infrastructure probes do not require session or auth handling
+  if (path === '/health' || path === '/ready') {
+    await next()
+    return
+  }
+
   const db = drizzle(c.env.DB, { schema })
 
   // 1. Initial Setup Wizard & Unconfigured Instance Detection (R1)
@@ -274,9 +319,8 @@ export async function authMiddleware(c: Context, next: Next) {
     Boolean((c.env as any)?.TEST_MIGRATIONS) ||
     c.env?.ENVIRONMENT === 'test'
   const isExplicitUnconfiguredTest = c.req.header('x-test-unconfigured') === 'true'
-  const rawCookieHeader = c.req.header('cookie') || null
+  const rawCookieHeader = c.req.header('cookie') ?? null
   const cookies = parseCookies(rawCookieHeader)
-  const isCookieless = cookies.triplet_session === undefined
 
   if (!isConfigured) {
     if (isAllowedWhenUnconfigured(path)) {
@@ -294,9 +338,22 @@ export async function authMiddleware(c: Context, next: Next) {
   let invalidSession = false
   const hasLoggedOutMarker = cookies.triplet_logged_out === '1'
   const maxAgeSeconds = getSessionMaxAge(c.env)
+  let authSecret: string | undefined
+  try {
+    authSecret = resolveAuthSecret(c.env)
+  } catch (err) {
+    if (!isPublicPath(path)) {
+      throw err
+    }
+  }
+
+  // If the user explicitly logged out, all ambient cookies and auto-login mechanisms are invalidated
+  if (hasLoggedOutMarker) {
+    invalidSession = true
+  }
 
   // 2. Cookie session with D1 server-side validation (checks all candidates if multiple triplet_session cookies are sent)
-  if (cookies.triplet_session !== undefined) {
+  if (!hasLoggedOutMarker && cookies.triplet_session !== undefined) {
     const candidateTokens = getAllCookieValues(rawCookieHeader, 'triplet_session')
     if (candidateTokens.length === 0) {
       invalidSession = true
@@ -306,7 +363,7 @@ export async function authMiddleware(c: Context, next: Next) {
         const res = await validateSessionToken(
           db,
           tokenCandidate,
-          (c.env as any)?.AUTH_SECRET,
+          authSecret,
           isTestOrLocal,
           maxAgeSeconds,
         )
@@ -323,45 +380,7 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 3. Cloudflare Access SSO header
-  if (!flyer) {
-    const cfAccessEmail = c.req.header('cf-access-authenticated-user-email')?.trim()
-    if (cfAccessEmail) {
-      const [existing] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.email, cfAccessEmail.toLowerCase()))
-
-      if (existing) {
-        flyer = await getActiveFlyer(db, existing.id)
-      } else {
-        const defaultPasswordHash = await hashPassword(crypto.randomUUID())
-        const [newUser] = await db
-          .insert(schema.users)
-          .values({
-            email: cfAccessEmail.toLowerCase(),
-            displayName: cfAccessEmail.split('@')[0],
-            passwordHash: defaultPasswordHash,
-            isActive: true,
-            role: 'flyer',
-            regulatoryRegion: 'SA',
-          })
-          .returning()
-
-        await db.insert(schema.certifications).values({
-          userId: newUser.id,
-          certifyingBody: 'TRA',
-          level: 2,
-          certNumber: 'TRA-AU-CF',
-          expiresOn: '2028-12-31',
-        })
-
-        flyer = await getActiveFlyer(db, newUser.id)
-      }
-    }
-  }
-
-  // 4. Authorization Bearer header (RFC 6750 case-insensitive, takes precedence over stale/logged-out cookie states)
+  // 3. Authorization Bearer header (RFC 6750 case-insensitive, takes precedence over stale/logged-out cookie states)
   if (!flyer) {
     const authHeader = c.req.header('authorization') || ''
     const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i)
@@ -373,7 +392,7 @@ export async function authMiddleware(c: Context, next: Next) {
         const res = await validateSessionToken(
           db,
           token,
-          (c.env as any)?.AUTH_SECRET,
+          authSecret,
           isTestOrLocal,
           maxAgeSeconds,
         )
@@ -387,8 +406,8 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 5. Direct developer / test flyer header
-  if (!flyer && !invalidSession) {
+  // 4. Direct developer / test flyer header (strictly guarded to test and local environments - BL-01, ignored if logged out)
+  if (isTestOrLocal && !hasLoggedOutMarker && !flyer && !invalidSession) {
     const headerUserId = c.req.header('x-flyer-id')
     const headerUserEmail = c.req.header('x-flyer-email')
     if (headerUserId) {
@@ -404,11 +423,13 @@ export async function authMiddleware(c: Context, next: Next) {
         invalidSession = true
       }
     } else if (headerUserEmail) {
-      const [u] = await db
+      let [u] = await db
         .select()
         .from(schema.users)
         .where(eq(schema.users.email, headerUserEmail.toLowerCase()))
-      if (u && u.isActive) {
+      if (!u && headerUserEmail.toLowerCase() === 'flyer@rocketry.local') {
+        flyer = await getActiveFlyer(db).catch(() => null)
+      } else if (u && u.isActive) {
         flyer = await getActiveFlyer(db, u.id).catch(() => null)
       } else {
         invalidSession = true
@@ -416,15 +437,7 @@ export async function authMiddleware(c: Context, next: Next) {
     }
   }
 
-  // 6. Test/local dev environment fallback (only for cookieless requests when not explicitly invalid and not signed out)
-  // Exclude /admin paths so unauthenticated requests cleanly redirect to /login (HTTP 302)
-  if (!flyer && !invalidSession && !hasLoggedOutMarker && !path.startsWith('/admin')) {
-    const isExplicitNoAuth = c.req.header('x-no-auth') === 'true'
 
-    if (!isExplicitNoAuth && isTestOrLocal && isCookieless) {
-      flyer = await getActiveFlyer(db)
-    }
-  }
 
   // 7. Attach resolved flyer and user context if authenticated
   if (flyer) {
@@ -461,6 +474,11 @@ export async function authMiddleware(c: Context, next: Next) {
 
   // 9. If unauthenticated or session invalid, enforce access control
   if (!flyer) {
+    if (!isKnownProtectedPath(path)) {
+      await next()
+      return
+    }
+
     const acceptsHtml = c.req.header('accept')?.includes('text/html')
     const isHtmx = c.req.header('HX-Request') === 'true'
     const logoutCookie = createLogoutCookie()
@@ -474,10 +492,12 @@ export async function authMiddleware(c: Context, next: Next) {
 
     if (acceptsHtml) {
       const headers = new Headers()
-      headers.set('Set-Cookie', logoutCookie)
-      headers.append('Set-Cookie', clearWebAuthn)
-      if (invalidSession) {
-        headers.append('Set-Cookie', markerCookie)
+      if (invalidSession || hasLoggedOutMarker || cookies.triplet_session !== undefined) {
+        headers.set('Set-Cookie', logoutCookie)
+        headers.append('Set-Cookie', clearWebAuthn)
+        if (invalidSession || hasLoggedOutMarker) {
+          headers.append('Set-Cookie', markerCookie)
+        }
       }
       headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
       headers.set('Pragma', 'no-cache')
@@ -489,10 +509,13 @@ export async function authMiddleware(c: Context, next: Next) {
     }
 
     const headers = new Headers()
-    headers.set('Set-Cookie', logoutCookie)
-    headers.append('Set-Cookie', clearWebAuthn)
-    if (invalidSession) {
-      headers.append('Set-Cookie', markerCookie)
+    headers.set('Content-Type', 'application/json')
+    if (invalidSession || hasLoggedOutMarker || cookies.triplet_session !== undefined) {
+      headers.set('Set-Cookie', logoutCookie)
+      headers.append('Set-Cookie', clearWebAuthn)
+      if (invalidSession || hasLoggedOutMarker) {
+        headers.append('Set-Cookie', markerCookie)
+      }
     }
     headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
     headers.set('Pragma', 'no-cache')
@@ -500,10 +523,9 @@ export async function authMiddleware(c: Context, next: Next) {
       headers.set('HX-Redirect', redirectLocation)
     }
 
-    return c.json(
-      { error: 'Unauthorized', message: 'Authentication required' },
-      401,
-      headers as any,
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized', message: 'Authentication required' }),
+      { status: 401, headers },
     )
   }
 

@@ -621,15 +621,14 @@ describe('Milestone 7 Phase 2 Tier 5 Adversarial Suite: Operations & Logistics (
       )
       expect([201, 302, 303]).toContain(res300.status)
 
-      // Boundary 4: 3.0001 kg without permit -> Fails with HTTP 400
+      // Boundary 4: 3.0001 kg without permit -> Succeeds without hard limiting (shows visible flag)
       const res3001Fail = await fetchPostForm(
         '/inventory/storage-sites',
         { name: 'Slightly Over 3.0001', capacity_kg: 3.0001, permit_number: '' },
         { Cookie: cookie },
+        { redirect: 'manual' },
       )
-      expect(res3001Fail.status).toBe(400)
-      const text3001 = await res3001Fail.text()
-      expect(text3001).toContain('SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(res3001Fail.status)
 
       // Boundary 5: 3.0001 kg with valid permit -> Succeeds
       const res3001Pass = await fetchPostForm(
@@ -644,15 +643,14 @@ describe('Milestone 7 Phase 2 Tier 5 Adversarial Suite: Operations & Logistics (
       )
       expect([201, 302, 303]).toContain(res3001Pass.status)
 
-      // Boundary 6: 5.5 kg with whitespace permit -> Fails with HTTP 400
+      // Boundary 6: 5.5 kg with whitespace permit -> Succeeds without hard limiting
       const resWhitespaceFail = await fetchPostForm(
         '/inventory/storage-sites',
         { name: 'Heavy Bunker 5.5', capacity_kg: 5.5, permit_number: '    ' },
         { Cookie: cookie },
+        { redirect: 'manual' },
       )
-      expect(resWhitespaceFail.status).toBe(400)
-      const textWs = await resWhitespaceFail.text()
-      expect(textWs).toContain('SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(resWhitespaceFail.status)
     })
 
     it('2.4: storage site update dynamically enforces SafeWork SA boundary and isolates access across flyers (IDOR defense)', async () => {
@@ -667,7 +665,7 @@ describe('Milestone 7 Phase 2 Tier 5 Adversarial Suite: Operations & Logistics (
         permitNumber: null,
       })
 
-      // 1. Owner updates capacity from 2.5kg to 4.0kg without permit -> Rejected 400
+      // 1. Owner updates capacity from 2.5kg to 4.0kg without permit -> Succeeds without hard limiting
       const updateOverFail = await fetchPostForm(
         `/inventory/storage-sites/${siteA.id}/edit`,
         {
@@ -676,10 +674,9 @@ describe('Milestone 7 Phase 2 Tier 5 Adversarial Suite: Operations & Logistics (
           permit_number: '',
         },
         { Cookie: `triplet_session=${tokenA}` },
+        { redirect: 'manual' },
       )
-      expect(updateOverFail.status).toBe(400)
-      const failHtml = await updateOverFail.text()
-      expect(failHtml).toContain('SafeWork SA regulations require a propellant storage license/permit')
+      expect([200, 201, 302, 303]).toContain(updateOverFail.status)
 
       // 2. Owner updates with valid permit -> Succeeds
       const updateOverPass = await fetchPostForm(

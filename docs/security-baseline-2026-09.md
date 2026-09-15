@@ -33,22 +33,22 @@ document), so that once fixed it can never silently regress.
 
 | ID | Severity | Title | Status |
 |---|---|---|---|
-| [BL-01](#bl-01) | Critical | Identity headers `X-Flyer-Id` / `X-Flyer-Email` are honoured in every environment | Open |
-| [BL-02](#bl-02) | Critical | Password verification accepts placeholder hashes and hash-as-plaintext | Open |
-| [BL-03](#bl-03) | High | Session signing key falls back to a secret committed to the repository | Open |
+| [BL-01](#bl-01) | Critical | Identity headers `X-Flyer-Id` / `X-Flyer-Email` are honoured in every environment | Remediated (Gated to test/local; SEC-AUTHN-01/02) |
+| [BL-02](#bl-02) | Critical | Password verification accepts placeholder hashes and hash-as-plaintext | Remediated (Removed bypasses, strict PBKDF2; SEC-AUTHN-04/05) |
+| [BL-03](#bl-03) | High | Session signing key falls back to a secret committed to the repository | Remediated (Mandatory in prod/staging; SEC-AUTHN-06/07) |
 | [BL-04](#bl-04) | High | Cloudflare Access email header is trusted without verifying the Access JWT | Open |
 | [BL-05](#bl-05) | High | No authentication rate limiting, throttling or lockout | Open |
-| [BL-06](#bl-06) | Medium | Session cookie is issued without the `Secure` attribute | Open |
+| [BL-06](#bl-06) | Medium | Session cookie is issued without the `Secure` attribute | Remediated (Added Secure attribute; SEC-SESS-01) |
 | [BL-07](#bl-07) | Medium | No CSRF defence beyond the cookie's `SameSite=Lax`; logout is reachable by GET | Open |
-| [BL-08](#bl-08) | Medium | No security response headers (CSP, HSTS, frame-ancestors, nosniff, Referrer-Policy) | Open |
+| [BL-08](#bl-08) | Medium | No security response headers (CSP, HSTS, frame-ancestors, nosniff, Referrer-Policy) | Remediated (Headers middleware added; SEC-HDR-01..05) |
 | [BL-09](#bl-09) | Medium | Front-end scripts load from public CDNs with no Subresource Integrity, one unpinned | Open |
 | [BL-10](#bl-10) | Medium | WebAuthn assertion does not verify origin or RP ID hash, and ignores the authenticator counter | Open |
 | [BL-11](#bl-11) | Medium | Passkey registration trusts a client-supplied public key with no attestation or challenge check | Open |
 | [BL-12](#bl-12) | Medium | Test-only authentication bypass is selected by a runtime value, not by build | Open |
 | [BL-13](#bl-13) | Medium | Session tokens are stored verbatim in the database, and revocation records leak them further | Open |
-| [BL-14](#bl-14) | Low | Secret comparisons are not constant-time | Open |
-| [BL-15](#bl-15) | Low | CSV import reads an unbounded request body into memory | Open |
-| [BL-16](#bl-16) | Informational | CI runs no dependency, secret, or static analysis scanning, and the repo has no linter | Open |
+| [BL-14](#bl-14) | Low | Secret comparisons are not constant-time | Remediated (timingSafeEqual applied across auth) |
+| [BL-15](#bl-15) | Low | CSV import reads an unbounded request body into memory | Remediated (2MB cap, 5000 row max, auth check; SEC-INP-01/02/05) |
+| [BL-16](#bl-16) | Informational | CI runs no dependency, secret, or static analysis scanning, and the repo has no linter | In Progress (Gate G2 added to CI) |
 | [BL-17](#bl-17) | Informational | Self-registration is open to the public internet | Open |
 
 ---

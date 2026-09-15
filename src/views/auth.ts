@@ -10,7 +10,6 @@ interface LoginViewOptions {
   error?: string | null
 }
 
-
 export function loginView(options: LoginViewOptions = {}): HtmlEscapedString | Promise<HtmlEscapedString> {
   const { redirectUrl = '/', error = null } = options
   const safeRedirect = redirectUrl.startsWith('/') && !redirectUrl.startsWith('//') ? redirectUrl : '/'

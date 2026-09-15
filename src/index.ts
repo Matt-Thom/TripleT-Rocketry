@@ -12,6 +12,7 @@ import { html } from 'hono/html'
 import { log, type TraceContext } from './logging'
 import type { ActiveFlyer } from './db/context'
 import { authMiddleware } from './middleware/auth'
+import { csrfMiddleware } from './middleware/csrf'
 import { authRouter } from './routes/auth'
 import { setupRouter } from './routes/setup'
 import { adminRouter } from './routes/admin'
@@ -55,8 +56,27 @@ app.use('*', async (c, next) => {
 })
 
 /**
+ * Security response headers middleware (BL-08 / G5 / SEC-HDR-*).
+ * Enforces defensive headers across all routes.
+ */
+app.use('*', async (c, next) => {
+  await next()
+  c.header('X-Content-Type-Options', 'nosniff')
+  c.header('X-Frame-Options', 'DENY')
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+})
+
+/**
+ * CSRF defense middleware checking Origin and Referer on state-changing methods (BL-07).
+ */
+app.use('*', csrfMiddleware)
+
+/**
  * Authentication & multi-user session middleware across the application.
  */
+
 app.use('*', authMiddleware)
 
 /**
@@ -65,6 +85,21 @@ app.use('*', authMiddleware)
 app.route('/', authRouter)
 app.route('/', setupRouter)
 app.route('/admin', adminRouter)
+
+/**
+ * Legacy Storage Sites root redirects (Requirement R3.2)
+ * Preserves query parameters and forwards to /sites/storage-sites
+ */
+app.get('/storage-sites', (c) => {
+  const search = new URL(c.req.url, 'http://localhost').search
+  return c.redirect('/sites/storage-sites' + search, 301)
+})
+app.get('/storage-sites/*', (c) => {
+  const search = new URL(c.req.url, 'http://localhost').search
+  let sub = c.req.path.slice('/storage-sites'.length)
+  if (sub === '/') sub = ''
+  return c.redirect('/sites/storage-sites' + sub + search, 301)
+})
 
 /**
  * Mount all domain sub-routers

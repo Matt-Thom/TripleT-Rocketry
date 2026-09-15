@@ -770,3 +770,17 @@ comparisons (BL-14), unbounded CSV import (BL-15).
 **Process:** CI runs no dependency, secret or static analysis scanning, and
 the repository has no linter at all (BL-16). Closing that is Phase 1 of the
 adoption plan in `docs/security-testing-process.md`.
+
+## 2026-09-10 — Security Baseline Phase 1 Remediation & Actioned Items
+
+Actioned findings from `docs/security-baseline-2026-09.md` and release testing process `docs/security-testing-process.md`:
+
+- **BL-01 (Critical) Remediated**: `X-Flyer-Id` and `X-Flyer-Email` request headers are strictly guarded behind `isTestOrLocal` in `src/middleware/auth.ts` and rejected on production/staging. Permanent regression tests added in `test/security/authn.test.ts` (`SEC-AUTHN-01`, `SEC-AUTHN-02`).
+- **BL-02 (Critical) Remediated**: Removed `seeded_flyer_default`, `argon2id-hash-placeholder`, and hash-as-plaintext bypasses in `src/services/auth.ts`. `verifyPassword` strictly validates PBKDF2 format and fails closed. Test fixtures in `test/helpers/db.ts` seed genuine PBKDF2 hashes. Permanent regression tests added in `test/security/authn.test.ts` (`SEC-AUTHN-04`, `SEC-AUTHN-05`).
+- **BL-03 (High) Remediated**: `resolveAuthSecret` enforces mandatory non-default `AUTH_SECRET` in production/staging and fails closed if unset. Documented in `.dev.vars.example`. Permanent regression tests added in `test/security/authn.test.ts` (`SEC-AUTHN-06`, `SEC-AUTHN-07`).
+- **BL-06 (Medium) Remediated**: Added `Secure` attribute to session, logout, and WebAuthn cookies in `src/services/auth.ts` and `src/routes/auth.ts`. Verified in `test/security/headers.test.ts` (`SEC-SESS-01`).
+- **BL-08 (Medium) Remediated**: Added security response headers middleware in `src/index.ts` injecting `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, and HSTS. Verified in `test/security/headers.test.ts` (`SEC-HDR-01..05`).
+- **BL-14 (Low) Remediated**: Constant-time comparison `timingSafeEqual` applied to password hash verification and session signatures.
+- **BL-15 (Low) Remediated**: Implemented 2MB request payload cap, 5,000 max row count cap in `parseCsvRows`, and unauthenticated route rejection in `src/routes/motors.ts` and `src/services/motor_import.ts`. Verified in `test/security/input_limits.test.ts` (`SEC-INP-01`, `SEC-INP-02`, `SEC-INP-05`).
+- **Gate G2 & Pipeline CI**: Added `npm audit --omit=dev --audit-level=high` to `.github/workflows/ci.yml`.
+- **Security Regression Suite (Gate G4)**: Created dedicated `test/security/` directory (`authn.test.ts`, `headers.test.ts`, `input_limits.test.ts`) with all 17 initial `SEC-*` tests passing.

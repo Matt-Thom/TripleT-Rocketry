@@ -24,6 +24,24 @@ type Bindings = {
 const events = new Hono<{ Bindings: Bindings }>()
 
 /**
+ * Access control middleware: Enforce authenticated flyer across all /events routes.
+ */
+events.use('*', async (c, next) => {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      const targetUrl = encodeURIComponent(
+        c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+      )
+      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+  await next()
+})
+
+/**
  * Helper to parse and normalize launch event form or JSON payload.
  */
 async function parseEventInput(c: any) {

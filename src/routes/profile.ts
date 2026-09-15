@@ -15,7 +15,7 @@ import { Hono } from 'hono'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer, type ActiveFlyer } from '../db/context'
+import type { ActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import { pageLayout } from '../views/layout'
 import { profileHubView } from '../views/profile'
@@ -54,7 +54,7 @@ profileRouter.use('*', async (c, next) => {
  */
 export async function getProfileHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login?redirect=/profile', 302)
@@ -146,7 +146,7 @@ export async function getProfileHandler(c: any) {
  */
 export async function postProfileHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login?redirect=/profile', 302)
@@ -201,7 +201,7 @@ export async function postProfileHandler(c: any) {
  */
 export async function postCertificationsHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login', 302)
@@ -279,7 +279,7 @@ export async function postCertificationsHandler(c: any) {
  */
 export async function postClubsHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login', 302)
@@ -334,7 +334,7 @@ export async function postClubsHandler(c: any) {
  */
 export async function deleteClubHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login', 302)
@@ -374,7 +374,7 @@ export async function deleteClubHandler(c: any) {
  */
 export async function deletePasskeyHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login', 302)
@@ -404,7 +404,7 @@ export async function deletePasskeyHandler(c: any) {
  */
 export async function renamePasskeyHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const activeFlyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const activeFlyer = (c.get as any)('user')
 
   if (!activeFlyer) {
     return c.redirect('/login', 302)

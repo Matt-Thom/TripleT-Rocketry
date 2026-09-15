@@ -22,6 +22,7 @@ export type Component = typeof schema.components.$inferSelect
 export type MotorInventory = typeof schema.motorInventories.$inferSelect
 export type InventoryTransaction = typeof schema.inventoryTransactions.$inferSelect
 export type Motor = typeof schema.motors.$inferSelect
+export type StorageSite = typeof schema.storageSites.$inferSelect
 
 export interface MotorInventoryWithMotor extends MotorInventory {
   motor?: Partial<Motor> | null
@@ -115,13 +116,6 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
         </div>
         <div class="flex flex-wrap items-center gap-2.5">
           <a
-            href="/inventory/storage-sites"
-            class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-slate-850 hover:bg-slate-800 text-slate-200 border border-slate-700 transition-colors shadow-sm gap-1.5"
-          >
-            <span>🏰</span>
-            <span>Storage Sites</span>
-          </a>
-          <a
             href="/inventory/transactions/new"
             class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors shadow-sm gap-1.5"
           >
@@ -129,18 +123,18 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
             <span>Record Movement / Sale</span>
           </a>
           <a
+            href="/inventory/motors/new"
+            class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm gap-1.5"
+          >
+            <span class="text-base leading-none font-bold">+</span>
+            <span>Add New Motor</span>
+          </a>
+          <a
             href="/inventory/components/new"
             class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm gap-1.5"
           >
-            <span>+</span>
+            <span class="text-base leading-none font-bold">+</span>
             <span>Add Component</span>
-          </a>
-          <a
-            href="/motors"
-            class="inline-flex items-center px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors gap-1.5"
-          >
-            <span>⚡</span>
-            <span>Motor Catalog</span>
           </a>
         </div>
       </div>
@@ -251,19 +245,55 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
         ${['all', 'motors'].includes(activeFilter)
           ? html`
               <div class="rounded-xl bg-slate-900/60 border border-slate-800 overflow-hidden shadow">
-                <div class="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+                <div class="px-4 py-3 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
                   <div class="flex items-center gap-2">
                     <span class="text-base">⚡</span>
                     <h2 class="text-sm font-bold text-white uppercase tracking-wider">Rocket Motors & Propellant</h2>
+                    <span class="text-xs text-slate-400">${motors.length} configured motor entries</span>
                   </div>
-                  <span class="text-xs text-slate-400">${motors.length} configured motor entries</span>
+                  <div class="flex items-center gap-2">
+                    <a
+                      href="/inventory/motors/new"
+                      class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm"
+                    >
+                      <span>+</span>
+                      <span>Add New Motor</span>
+                    </a>
+                    <form
+                      id="motor-batch-delete-form"
+                      action="/inventory/motors/batch-delete"
+                      method="POST"
+                      class="inline-flex items-center"
+                      onsubmit="return confirm('Are you sure you want to remove the selected motor inventory items? Motors with flight logs or transaction history will be recorded as regulatory disposal.');"
+                    >
+                      <button
+                        type="submit"
+                        id="batch-delete-btn"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800/60 transition-colors shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled
+                        title="Delete selected motors"
+                      >
+                        <span>🗑️</span>
+                        <span>Delete Selected</span>
+                        <span id="selected-count-badge" class="ml-1 px-1.5 py-0.2 bg-red-800/60 rounded text-[10px] hidden font-mono">0</span>
+                      </button>
+                    </form>
+                  </div>
                 </div>
 
                 <div class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-slate-800 text-left text-sm">
                     <thead class="bg-slate-950/40 text-xs uppercase font-semibold text-slate-400">
                       <tr>
-                        <th class="py-3 pl-4 pr-3 sm:pl-6">Motor Model</th>
+                        <th class="py-3 pl-4 pr-2 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            id="select-all-motors"
+                            title="Select all motors"
+                            class="rounded border-slate-700 bg-slate-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                          />
+                        </th>
+                        <th class="py-3 pl-2 pr-3 sm:pl-3">Motor Model</th>
                         <th class="px-3 py-3">Impulse</th>
                         <th class="px-3 py-3">Stock on Hand</th>
                         <th class="px-3 py-3">Used / Fired</th>
@@ -276,9 +306,9 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                       ${motors.length === 0
                         ? html`
                             <tr>
-                              <td colspan="7" class="py-6 text-center text-slate-500 italic">
+                              <td colspan="8" class="py-6 text-center text-slate-500 italic">
                                 No motors currently tracked in your inventory.
-                                <a href="/motors" class="text-brand-400 hover:underline ml-1">Browse catalog to add motors →</a>
+                                <a href="/inventory/motors/new" class="text-brand-400 hover:underline ml-1 font-semibold">+ Add New Motor →</a>
                               </td>
                             </tr>
                           `
@@ -287,7 +317,17 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                             const classBadge = getImpulseClassBadgeClasses(motor.impulseClass)
                             return html`
                               <tr id="inventory-row-${item.id}" class="hover:bg-slate-800/40 transition-colors">
-                                <td class="py-3.5 pl-4 pr-3 sm:pl-6">
+                                <td class="py-3.5 pl-4 pr-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    name="selected_ids"
+                                    value="${item.id}"
+                                    form="motor-batch-delete-form"
+                                    class="motor-select-checkbox rounded border-slate-700 bg-slate-800 text-brand-500 focus:ring-brand-500 cursor-pointer"
+                                    title="Select motor for batch actions"
+                                  />
+                                </td>
+                                <td class="py-3.5 pl-2 pr-3 sm:pl-3">
                                   <div class="font-semibold text-white">
                                     <a href="/motors/${item.motorId}" class="hover:text-brand-400 transition-colors">
                                       ${motor.manufacturer || 'Unknown'} <span class="font-mono text-brand-300">${motor.model || item.motorId}</span>
@@ -317,6 +357,7 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                       hx-swap="outerHTML"
                                       class="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold flex items-center justify-center border border-slate-700 transition-colors disabled:opacity-40"
                                       title="Decrease on-hand count"
+                                      aria-label="Decrease on-hand count"
                                       ${item.quantityOnHand <= 0 ? 'disabled' : ''}
                                     >
                                       -
@@ -332,6 +373,7 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                       hx-swap="outerHTML"
                                       class="w-7 h-7 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold flex items-center justify-center border border-slate-700 transition-colors"
                                       title="Increase on-hand count"
+                                      aria-label="Increase on-hand count"
                                     >
                                       +
                                     </button>
@@ -364,6 +406,21 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                   <div class="font-mono text-slate-500">${item.batchLotNumber ? `Lot: ${item.batchLotNumber}` : ''}</div>
                                 </td>
                                 <td class="py-3.5 pl-3 pr-4 sm:pr-6 text-right whitespace-nowrap">
+                                  <form
+                                    action="/inventory/motors/${item.id}/delete"
+                                    method="POST"
+                                    class="inline-block mr-2"
+                                    onsubmit="return confirm('Are you sure you want to remove this motor from inventory? Motors with flight logs or transaction history will be recorded as regulatory disposal.');"
+                                  >
+                                    <button
+                                      type="submit"
+                                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 transition-colors cursor-pointer"
+                                      title="Remove motor from inventory"
+                                    >
+                                      <span>🗑️</span>
+                                      <span>Delete</span>
+                                    </button>
+                                  </form>
                                   ${item.quantityOnHand <= 0
                                     ? html`
                                         <form
@@ -376,10 +433,9 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                                         >
                                           <button
                                             type="submit"
-                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-950/70 border border-red-800/50 transition-colors cursor-pointer"
+                                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-slate-400 hover:text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors cursor-pointer"
                                             title="Dismiss zero-quantity motor from active inventory view"
                                           >
-                                            <span>🗑️</span>
                                             <span>Dismiss</span>
                                           </button>
                                         </form>
@@ -404,6 +460,50 @@ export function inventoryHubView(data: InventoryPageData): HtmlEscapedString | P
                     </tbody>
                   </table>
                 </div>
+
+                <script>
+                  (function() {
+                    const selectAll = document.getElementById('select-all-motors');
+                    const batchBtn = document.getElementById('batch-delete-btn');
+                    const countBadge = document.getElementById('selected-count-badge');
+                    const checkboxes = document.querySelectorAll('.motor-select-checkbox');
+
+                    function updateBatchState() {
+                      const checked = document.querySelectorAll('.motor-select-checkbox:checked');
+                      const count = checked.length;
+                      if (batchBtn) {
+                        batchBtn.disabled = count === 0;
+                      }
+                      if (countBadge) {
+                        countBadge.textContent = String(count);
+                        if (count > 0) {
+                          countBadge.classList.remove('hidden');
+                        } else {
+                          countBadge.classList.add('hidden');
+                        }
+                      }
+                      if (selectAll && checkboxes.length > 0) {
+                        selectAll.checked = count === checkboxes.length;
+                        selectAll.indeterminate = count > 0 && count < checkboxes.length;
+                      }
+                    }
+
+                    if (selectAll) {
+                      selectAll.addEventListener('change', function() {
+                        checkboxes.forEach(function(cb) {
+                          cb.checked = selectAll.checked;
+                        });
+                        updateBatchState();
+                      });
+                    }
+
+                    checkboxes.forEach(function(cb) {
+                      cb.addEventListener('change', updateBatchState);
+                    });
+
+                    updateBatchState();
+                  })();
+                </script>
               </div>
             `
           : ''}
@@ -1356,6 +1456,205 @@ export function custodyLedgerView(transactions: (InventoryTransaction & {
           </table>
         </div>
       </div>
+    </div>
+  `
+}
+
+/**
+ * Form view for adding a new motor to inventory (`GET /inventory/motors/new`).
+ */
+export function addMotorInventoryFormView(
+  catalogMotors: Motor[],
+  storageSites?: StorageSite[],
+): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const today = new Date().toISOString().slice(0, 10)
+  return html`
+    <div class="max-w-2xl mx-auto space-y-6">
+      <div class="border-b border-slate-800 pb-3">
+        <a href="/inventory" class="text-xs text-brand-400 hover:underline">← Back to Inventory</a>
+        <h1 class="text-2xl font-bold text-white mt-2 flex items-center gap-2">
+          <span>⚡</span>
+          <span>Add Motor to Inventory</span>
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">
+          Select a motor from the catalog to add to your personal inventory stock on hand and storage tracking.
+        </p>
+      </div>
+
+      <form method="POST" action="/inventory" class="space-y-5 bg-slate-900/60 p-6 rounded-2xl border border-slate-800">
+        <div>
+          <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Motor Selection *</label>
+          <select
+            name="motor_id"
+            id="motor_id"
+            required
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="" disabled selected>-- Select a motor from catalog --</option>
+            ${catalogMotors.map((m) => {
+              const delay = m.delayS != null ? `-${m.delayS}` : ''
+              const dia = m.diameterMm ? ` (${m.diameterMm}mm)` : ''
+              return html`
+                <option value="${m.id}">
+                  [Class ${m.impulseClass || '?'}] ${m.manufacturer} ${m.model}${delay}${dia}
+                </option>
+              `
+            })}
+          </select>
+          <p class="text-xs text-slate-400 mt-1">
+            Need a motor not in the catalog?
+            <a href="/motors/import" class="text-brand-400 hover:underline ml-1">Import RSE/ENG file →</a>
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Quantity on Hand *</label>
+            <input
+              type="number"
+              name="quantity_on_hand"
+              min="1"
+              value="1"
+              required
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Acquisition Date</label>
+            <input
+              type="date"
+              name="acquired_on"
+              value="${today}"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Storage Location</label>
+            <input
+              type="text"
+              name="storage_location"
+              list="storage-sites-list"
+              placeholder="e.g. Primary Magazine, Workshop Bunker"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+            <datalist id="storage-sites-list">
+              ${(storageSites || []).map((s) => html`<option value="${s.name}">${s.location || s.name}</option>`)}
+            </datalist>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Batch / Lot Number</label>
+            <input
+              type="text"
+              name="batch_lot_number"
+              placeholder="e.g. LOT-2026-04A"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Notes / Compliance Info</label>
+          <textarea
+            name="notes"
+            rows="2"
+            placeholder="e.g. Acquired from authorized dealer. Storage compliant."
+            class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-between pt-4 border-t border-slate-800">
+          <a
+            href="/inventory"
+            class="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="px-5 py-2 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-sm flex items-center gap-1.5"
+          >
+            <span>+</span>
+            <span>Add Motor to Inventory</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  `
+}
+
+/**
+ * Themed Form View for adjusting motor inventory stock (`GET /inventory/:id/adjust`).
+ */
+export function adjustInventoryFormView(item: MotorInventoryWithMotor): HtmlEscapedString | Promise<HtmlEscapedString> {
+  const motor = item.motor || {}
+  return html`
+    <div class="max-w-xl mx-auto space-y-6">
+      <div class="border-b border-slate-800 pb-3">
+        <a href="/inventory" class="text-xs text-brand-400 hover:underline">← Back to Inventory</a>
+        <h1 class="text-2xl font-bold text-white mt-2 flex items-center gap-2">
+          <span>⚡</span>
+          <span>Adjust Motor Stock: ${motor.manufacturer || ''} ${motor.model || 'Motor'}</span>
+        </h1>
+        <p class="text-sm text-slate-400 mt-1">
+          Update quantity on hand, log expended count, or adjust storage location with standard site theme.
+        </p>
+      </div>
+
+      <form method="POST" action="/inventory/${item.id}/adjust" class="space-y-5 bg-slate-900/60 p-6 rounded-2xl border border-slate-800">
+        <div class="p-4 rounded-xl bg-slate-950/80 border border-slate-800 grid grid-cols-2 gap-4">
+          <div>
+            <span class="text-xs text-slate-400 uppercase font-semibold">Current Stock on Hand</span>
+            <p class="text-2xl font-bold text-white font-mono mt-1">${item.quantityOnHand}</p>
+          </div>
+          <div>
+            <span class="text-xs text-slate-400 uppercase font-semibold">Expended / Fired</span>
+            <p class="text-2xl font-bold text-amber-400 font-mono mt-1">${item.expendedCount}</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Action</label>
+            <select
+              name="action"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="expend" selected>🔥 Log Expend (-1 on-hand, +1 expended)</option>
+              <option value="increment">➕ Increment Stock (+1 on-hand)</option>
+              <option value="decrement">➖ Decrement Stock (-1 on-hand)</option>
+              <option value="restore">🔄 Restore Expended (+1 on-hand, -1 expended)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase text-slate-300 mb-1.5">Quantity Step (Delta)</label>
+            <input
+              type="number"
+              name="delta"
+              min="1"
+              value="1"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-4 border-t border-slate-800">
+          <a
+            href="/inventory"
+            class="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-850 hover:bg-slate-700 text-slate-300 transition-colors"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="px-5 py-2 rounded-lg text-sm font-semibold bg-brand-500 hover:bg-brand-400 text-slate-950 transition-colors shadow-sm"
+          >
+            Save Adjustment
+          </button>
+        </div>
+      </form>
     </div>
   `
 }

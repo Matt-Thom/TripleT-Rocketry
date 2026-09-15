@@ -12,7 +12,6 @@ import { and, asc, eq, isNull, like, or } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import { html } from 'hono/html'
 import * as schema from '../db/schema'
-import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import { motorCatalogView, motorDetailView, motorImportView } from '../views/motors'
 import { pageLayout } from '../views/layout'
@@ -32,13 +31,31 @@ type Variables = {
 export const motorsRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 /**
+ * Access control middleware: Enforce authenticated flyer across all /motors routes.
+ */
+motorsRouter.use('*', async (c, next) => {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      const targetUrl = encodeURIComponent(
+        c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+      )
+      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+  await next()
+})
+
+/**
  * Motor Catalog Listing Handler.
  * Supports filtering by `?impulse_class=...` and searching by `?search=...`.
  * Joins/maps active flyer's inventory stock on hand and expended counts.
  */
 async function listMotorsHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   const rawImpulseClass = c.req.query('impulse_class') || c.req.query('class') || null
   const impulseClassFilter = rawImpulseClass ? rawImpulseClass.toUpperCase().trim() : null
@@ -149,7 +166,7 @@ async function getMotorDetailHandler(c: any) {
     })
   }
 
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   // Query user inventory status for this specific motor
   const [inventoryItem] = await db
@@ -183,7 +200,7 @@ async function getMotorDetailHandler(c: any) {
  */
 export async function getMotorImportHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
 
   const content = motorImportView()
   const fullHtml = pageLayout({
@@ -200,10 +217,25 @@ export async function getMotorImportHandler(c: any) {
 
 /**
  * Motor CSV Import Action (POST /motors/import).
+ * Enforces authentication, payload size caps, and bounded row parsing (BL-15).
  */
 export async function postMotorImportHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
+
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      return c.redirect('/login', 302)
+    }
+    return c.json({ error: 'Unauthorized: Authentication required to import motors' }, 401)
+  }
+
+  // Enforce request size limit (BL-15)
+  const contentLength = parseInt(c.req.header('content-length') || '0', 10)
+  if (contentLength > 2 * 1024 * 1024) {
+    return c.text('Payload Too Large: CSV upload exceeds 2MB limit (BL-15)', 413)
+  }
 
   let csvContent = ''
   const contentType = c.req.header('content-type') || ''
@@ -225,6 +257,10 @@ export async function postMotorImportHandler(c: any) {
   } else {
     const body = await c.req.parseBody().catch(() => ({}))
     csvContent = (body.csv_data || body.csv || '') as string
+  }
+
+  if (csvContent.length > 2 * 1024 * 1024) {
+    return c.text('Payload Too Large: CSV upload exceeds 2MB limit (BL-15)', 413)
   }
 
   if (!csvContent || csvContent.trim() === '') {

@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer, type ActiveFlyer } from '../db/context'
+import type { ActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import { pageLayout } from '../views/layout'
 import { userSettingsView } from '../views/settings'
@@ -31,8 +31,16 @@ export const settingsRouter = new Hono<{ Bindings: Bindings; Variables: Variable
  * Render user settings page (GET /settings).
  */
 export async function getSettingsHandler(c: any) {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      return c.redirect('/login?redirect=/settings', 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   const [dbUser] = await db
     .select({
@@ -73,8 +81,16 @@ export async function getSettingsHandler(c: any) {
  * Handle user settings update (POST /settings).
  */
 export async function postSettingsHandler(c: any) {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      return c.redirect('/login?redirect=/settings', 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''
