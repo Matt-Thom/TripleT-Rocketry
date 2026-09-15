@@ -38,67 +38,65 @@ dashboardRouter.get('/', async (c) => {
 
   const db = drizzle(c.env.DB, { schema })
 
-  // 1. Total flights count
-  const [flightCountResult] = await db
-    .select({ count: count() })
-    .from(schema.flights)
-  const totalFlights = flightCountResult?.count ?? 0
-
-  // 2. Active rockets count (status = flight_ready)
-  const [rocketCountResult] = await db
-    .select({ count: count() })
-    .from(schema.rockets)
-    .where(eq(schema.rockets.status, 'flight_ready'))
-  const activeRockets = rocketCountResult?.count ?? 0
-
-  // 3. Motor inventory total units on hand
-  const [motorStockResult] = await db
-    .select({
+  // Performance Optimization: Fetch all independent statistics and recent flights concurrently via Promise.all
+  // Reduces sequential database IO wait time from 5 sequential round-trips to 1 concurrent batch.
+  const [
+    [flightCountResult],
+    [rocketCountResult],
+    [motorStockResult],
+    [successfulFlightsResult],
+    recentFlightsRows,
+  ] = await Promise.all([
+    // 1. Total flights count
+    db.select({ count: count() }).from(schema.flights),
+    // 2. Active rockets count (status = flight_ready)
+    db.select({ count: count() }).from(schema.rockets).where(eq(schema.rockets.status, 'flight_ready')),
+    // 3. Motor inventory total units on hand
+    db.select({
       total: sql<number>`coalesce(sum(${schema.motorInventories.quantityOnHand}), 0)`,
-    })
-    .from(schema.motorInventories)
+    }).from(schema.motorInventories),
+    // 4. Successful flights count
+    db.select({ count: count() }).from(schema.flights).where(eq(schema.flights.outcome, 'successful')),
+    // 5. Recent flights (latest 5)
+    db
+      .select({
+        id: schema.flights.id,
+        flightNumber: schema.flights.flightNumber,
+        flownAt: schema.flights.flownAt,
+        altitudeAglM: schema.flights.altitudeAglM,
+        outcome: schema.flights.outcome,
+        softGateWarnings: schema.flights.softGateWarnings,
+        proceededDespiteWarnings: schema.flights.proceededDespiteWarnings,
+        rocketName: schema.rockets.name,
+        motorMfr: schema.motors.manufacturer,
+        motorModel: schema.motors.model,
+      })
+      .from(schema.flights)
+      .leftJoin(
+        schema.rocketConfigurations,
+        eq(schema.flights.rocketConfigurationId, schema.rocketConfigurations.id),
+      )
+      .leftJoin(
+        schema.rockets,
+        eq(schema.rocketConfigurations.rocketId, schema.rockets.id),
+      )
+      .leftJoin(
+        schema.motors,
+        eq(schema.flights.motorId, schema.motors.id),
+      )
+      .orderBy(desc(schema.flights.flownAt), desc(schema.flights.createdAt))
+      .limit(5),
+  ])
+
+  const totalFlights = flightCountResult?.count ?? 0
+  const activeRockets = rocketCountResult?.count ?? 0
   const motorStockOnHand = Number(motorStockResult?.total ?? 0)
 
-  // 4. Mission success rate
   let successRatePercent: number | null = null
   if (totalFlights > 0) {
-    const [successfulFlightsResult] = await db
-      .select({ count: count() })
-      .from(schema.flights)
-      .where(eq(schema.flights.outcome, 'successful'))
     const successfulFlights = successfulFlightsResult?.count ?? 0
     successRatePercent = Math.round((successfulFlights / totalFlights) * 100)
   }
-
-  // 5. Recent flights (latest 5)
-  const recentFlightsRows = await db
-    .select({
-      id: schema.flights.id,
-      flightNumber: schema.flights.flightNumber,
-      flownAt: schema.flights.flownAt,
-      altitudeAglM: schema.flights.altitudeAglM,
-      outcome: schema.flights.outcome,
-      softGateWarnings: schema.flights.softGateWarnings,
-      proceededDespiteWarnings: schema.flights.proceededDespiteWarnings,
-      rocketName: schema.rockets.name,
-      motorMfr: schema.motors.manufacturer,
-      motorModel: schema.motors.model,
-    })
-    .from(schema.flights)
-    .leftJoin(
-      schema.rocketConfigurations,
-      eq(schema.flights.rocketConfigurationId, schema.rocketConfigurations.id),
-    )
-    .leftJoin(
-      schema.rockets,
-      eq(schema.rocketConfigurations.rocketId, schema.rockets.id),
-    )
-    .leftJoin(
-      schema.motors,
-      eq(schema.flights.motorId, schema.motors.id),
-    )
-    .orderBy(desc(schema.flights.flownAt), desc(schema.flights.createdAt))
-    .limit(5)
 
   const recentFlights: RecentFlightItem[] = recentFlightsRows.map((f) => {
     const warnings = (f.softGateWarnings as string[] | null) || []
