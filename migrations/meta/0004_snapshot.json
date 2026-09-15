@@ -945,7 +945,7 @@
       "checkConstraints": {
         "ck_flights_outcome": {
           "name": "ck_flights_outcome",
-          "value": "\"outcome\" IS NULL OR \"outcome\" IN ('successful', 'cato', 'separation', 'recovery_failure', 'tree', 'powerline', 'lost', 'other')"
+          "value": "\"outcome\" IS NULL OR \"outcome\" IN ('successful', 'cato', 'separation', 'recovery_failure', 'tree', 'powerline', 'lost', 'other', 'GOOD', 'CATO', 'Shred', 'Unstable', 'Zipper', 'Separation', 'No chute', 'Tangled', 'Lawn Dart', 'Retention fail', 'No ignition')"
         }
       }
     },
