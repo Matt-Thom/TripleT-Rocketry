@@ -302,6 +302,71 @@ describe('Requirement R5: Authentication, Site Administration & Logout Security'
       }
     })
 
+    it('3.1b: deactivating a user with multiple active sessions revokes all session tokens in batch', async () => {
+      const admin = await seedTestUser()
+      try {
+        await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(admin.id).run()
+      } catch {}
+      const adminToken = await signSession(admin.id)
+
+      const target = await seedTestUser()
+      const tokens = ['token_alpha_1', 'token_beta_2', 'token_gamma_3']
+
+      for (const token of tokens) {
+        await env.DB.prepare(
+          'INSERT INTO sessions (id, user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).bind(crypto.randomUUID(), target.id, token, Date.now() + 86400000, Date.now()).run()
+      }
+
+      await fetchPostForm(`/admin/users/${target.id}/status`, {
+        is_active: 'false',
+      }, {
+        Cookie: `triplet_session=${adminToken}`,
+      }, { redirect: 'manual' })
+
+      // Verify all session tokens are recorded in siteSettings as admin_revoked
+      for (const token of tokens) {
+        const row = await env.DB.prepare(
+          'SELECT value FROM site_settings WHERE key = ?',
+        ).bind(`revoked_session:${token}`).first<{ value: string }>()
+
+        expect(row?.value).toBe('admin_revoked')
+      }
+    })
+
+    it('3.1c: deleting a user with multiple active sessions revokes all session tokens in batch and purges sessions', async () => {
+      const admin = await seedTestUser()
+      try {
+        await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(admin.id).run()
+      } catch {}
+      const adminToken = await signSession(admin.id)
+
+      const target = await seedTestUser()
+      const tokens = ['token_del_1', 'token_del_2', 'token_del_3']
+
+      for (const token of tokens) {
+        await env.DB.prepare(
+          'INSERT INTO sessions (id, user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)',
+        ).bind(crypto.randomUUID(), target.id, token, Date.now() + 86400000, Date.now()).run()
+      }
+
+      await fetchPostForm(`/admin/users/${target.id}/delete`, {}, {
+        Cookie: `triplet_session=${adminToken}`,
+      }, { redirect: 'manual' })
+
+      // Verify all session tokens are recorded in siteSettings as admin_revoked
+      for (const token of tokens) {
+        const row = await env.DB.prepare(
+          'SELECT value FROM site_settings WHERE key = ?',
+        ).bind(`revoked_session:${token}`).first<{ value: string }>()
+
+        expect(row?.value).toBe('admin_revoked')
+      }
+
+      const remaining = await env.DB.prepare('SELECT * FROM sessions WHERE user_id = ?').bind(target.id).all()
+      expect(remaining.results).toHaveLength(0)
+    })
+
     it('3.2: prevents admin from deactivating their own account (self-deactivation guard)', async () => {
       const admin = await seedTestUser()
       try {

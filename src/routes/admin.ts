@@ -354,22 +354,30 @@ adminRouter.post('/users/:id/status', async (c) => {
       .where(eq(schema.sessions.userId, id))
       .catch(() => [])
 
-    for (const s of userSessions) {
-      if (s.token?.trim()) {
-        await db
-          .insert(schema.siteSettings)
-          .values({
-            key: `revoked_session:${s.token.trim()}`,
-            value: 'admin_revoked',
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: schema.siteSettings.key,
-            set: { updatedAt: now },
-          })
-          .catch(() => {})
-      }
+    const sessionTokens = [
+      ...new Set(
+        userSessions
+          .map((s) => s.token?.trim())
+          .filter((t): t is string => Boolean(t))
+      ),
+    ]
+
+    if (sessionTokens.length > 0) {
+      const batchRows = sessionTokens.map((token) => ({
+        key: `revoked_session:${token}`,
+        value: 'admin_revoked',
+        createdAt: now,
+        updatedAt: now,
+      }))
+
+      await db
+        .insert(schema.siteSettings)
+        .values(batchRows)
+        .onConflictDoUpdate({
+          target: schema.siteSettings.key,
+          set: { value: 'admin_revoked', updatedAt: now },
+        })
+        .catch(() => {})
     }
 
     await db.delete(schema.sessions).where(eq(schema.sessions.userId, id)).catch(() => {})
@@ -443,22 +451,30 @@ adminRouter.post('/users/:id/delete', async (c) => {
     })
     .catch(() => {})
 
-  for (const s of userSessions) {
-    if (s.token?.trim()) {
-      await db
-        .insert(schema.siteSettings)
-        .values({
-          key: `revoked_session:${s.token.trim()}`,
-          value: 'admin_revoked',
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: schema.siteSettings.key,
-          set: { updatedAt: now },
-        })
-        .catch(() => {})
-    }
+  const sessionTokens = [
+    ...new Set(
+      userSessions
+        .map((s) => s.token?.trim())
+        .filter((t): t is string => Boolean(t))
+    ),
+  ]
+
+  if (sessionTokens.length > 0) {
+    const batchRows = sessionTokens.map((token) => ({
+      key: `revoked_session:${token}`,
+      value: 'admin_revoked',
+      createdAt: now,
+      updatedAt: now,
+    }))
+
+    await db
+      .insert(schema.siteSettings)
+      .values(batchRows)
+      .onConflictDoUpdate({
+        target: schema.siteSettings.key,
+        set: { value: 'admin_revoked', updatedAt: now },
+      })
+      .catch(() => {})
   }
 
   // Delete sessions, credentials, certifications, then user
