@@ -49,7 +49,8 @@ export async function getActiveFlyer(
   if (!firstUser) {
     try {
       // Lazily seed primary Australian flyer
-      const defaultPasswordHash = await hashPassword('rocketry123!')
+      const seedPassword = process.env.DEFAULT_SEED_PASSWORD || crypto.randomUUID()
+      const defaultPasswordHash = await hashPassword(seedPassword)
 
       // 1. TripleT Pilot (TRA Level 2 - Victoria, Australia)
       const [pilot1] = await db

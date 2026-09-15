@@ -14,6 +14,7 @@ import app from '../../src/index'
 import * as schema from '../../src/db/schema'
 import { getDb, truncateDb, seedTestUser, seedTestRocket, seedTestMotor, seedTestInventory, seedTestCert } from '../helpers/db'
 import { getActiveFlyer } from '../../src/db/context'
+import { verifyPassword } from '../../src/services/auth'
 import { fetchGet, fetchPostForm, fetchHtmxPostForm, encodeFormData } from '../helpers/http'
 import { eq, and } from 'drizzle-orm'
 
@@ -599,6 +600,17 @@ describe('Challenger 2: Adversarial Integrity & Mutation Safety Suite', () => {
       expect(flyer.maxCertLevel).toBe(3)
     })
 
+    it("4.5: default seeded pilot password is randomly generated and does not use hardcoded 'rocketry123!'", async () => {
+      const db = getDb()
+      const flyer = await getActiveFlyer(db)
+
+      const [user] = await db.select().from(schema.users).where(eq(schema.users.id, flyer.id))
+      expect(user).toBeDefined()
+
+      // The default seed password must NOT match the hardcoded rocketry123!
+      const isHardcodedValid = await verifyPassword("rocketry123!", user.passwordHash)
+      expect(isHardcodedValid).toBe(false)
+    })
     it('4.4: concurrent getActiveFlyer invocations on cold/empty DB guarantee single-user DB integrity', async () => {
       const db = getDb()
 
