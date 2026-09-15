@@ -870,7 +870,7 @@ describe('Tier 2: Boundary & Corner Cases (R1 - R6)', () => {
       expect([200, 201, 302, 303]).toContain(res.status)
     })
 
-    it('2.4.4: storage site with capacity > 3.0 kg fails with 400 when permit number omitted (SA regulatory rule)', async () => {
+    it('2.4.4: storage site with capacity > 3.0 kg succeeds without hard limiting (permits visible flag)', async () => {
       const flyer = await seedTestUser()
       const token = await signSession(flyer.id)
 
@@ -880,12 +880,13 @@ describe('Tier 2: Boundary & Corner Cases (R1 - R6)', () => {
           name: 'High Capacity HPR Magazine',
           location: 'Explosives Bunker 1',
           capacity_kg: 3.1, // Exceeds SA 3.0 kg limit
-          permit_number: '', // Missing required permit
+          permit_number: '', // Omitted permit
         },
         { Cookie: `triplet_session=${token}` },
+        { redirect: 'manual' },
       )
 
-      expect([400, 422]).toContain(res.status)
+      expect([200, 201, 302, 303]).toContain(res.status)
     })
 
     it('2.4.5: storage site with capacity > 3.0 kg succeeds when valid permit number is provided', async () => {

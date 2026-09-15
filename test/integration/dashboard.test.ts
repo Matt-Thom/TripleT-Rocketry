@@ -11,6 +11,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as schema from '../../src/db/schema'
 import { getActiveFlyer } from '../../src/db/context'
+import { fetchGet } from '../helpers/http'
 
 const db = () => drizzle(env.DB, { schema })
 
@@ -77,14 +78,32 @@ describe('Active Flyer Context Helper (src/db/context.ts)', () => {
 })
 
 describe('Web Shell & UI Navigation (GET /)', () => {
-  it('returns HTTP 200 with text/html content-type header', async () => {
-    const res = await SELF.fetch('https://example.com/')
+  it('redirects unauthenticated browser requests to /login with redirect parameter', async () => {
+    const res = await SELF.fetch('https://example.com/', {
+      headers: { Accept: 'text/html' },
+      redirect: 'manual',
+    })
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('/login?redirect=%2F')
+  })
+
+  it('rejects unauthenticated API requests with HTTP 401 Unauthorized', async () => {
+    const res = await SELF.fetch('https://example.com/', {
+      headers: { Accept: 'application/json' },
+    })
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as any
+    expect(body).toEqual({ error: 'Unauthorized', message: 'Authentication required' })
+  })
+
+  it('returns HTTP 200 with text/html content-type header for authenticated flyer', async () => {
+    const res = await fetchGet('/')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
   })
 
   it('includes Tailwind CSS Play CDN and dark mode styling', async () => {
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     const html = await res.text()
     expect(html).toContain('https://cdn.tailwindcss.com')
     expect(html).toContain('tailwind.config')
@@ -93,13 +112,13 @@ describe('Web Shell & UI Navigation (GET /)', () => {
   })
 
   it('includes HTMX v2.0.4 CDN script', async () => {
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     const html = await res.text()
     expect(html).toContain('https://unpkg.com/htmx.org@2.0.4')
   })
 
   it('renders desktop navigation bar with all section links and active dashboard tab', async () => {
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     const html = await res.text()
 
     // Brand and title
@@ -120,7 +139,7 @@ describe('Web Shell & UI Navigation (GET /)', () => {
   })
 
   it('renders mobile Range Companion bottom navigation bar', async () => {
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     const html = await res.text()
 
     expect(html).toContain('aria-label="Mobile navigation"')
@@ -132,7 +151,7 @@ describe('Web Shell & UI Navigation (GET /)', () => {
   })
 
   it('renders 4 quick stats cards and empty state when database has no flight logs', async () => {
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     const html = await res.text()
 
     expect(html).toContain('Total Flights')
@@ -146,7 +165,7 @@ describe('Web Shell & UI Navigation (GET /)', () => {
   })
 
   it('renders quick action cards grid', async () => {
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     const html = await res.text()
 
     expect(html).toContain('Quick Actions')
@@ -207,7 +226,7 @@ describe('Web Shell & UI Navigation (GET /)', () => {
     })
 
     // Fetch dashboard
-    const res = await SELF.fetch('https://example.com/')
+    const res = await fetchGet('/')
     expect(res.status).toBe(200)
     const html = await res.text()
 
@@ -240,8 +259,8 @@ describe('Error Handling & Probe Compatibility', () => {
   })
 
   it('returns styled HTML 404 page when Accept header requests text/html', async () => {
-    const res = await SELF.fetch('https://example.com/nonexistent-route', {
-      headers: { Accept: 'text/html,application/xhtml+xml' },
+    const res = await fetchGet('/nonexistent-route', {
+      Accept: 'text/html,application/xhtml+xml',
     })
     expect(res.status).toBe(404)
     expect(res.headers.get('content-type')).toContain('text/html')
@@ -251,8 +270,8 @@ describe('Error Handling & Probe Compatibility', () => {
   })
 
   it('returns JSON 404 when Accept header requests application/json', async () => {
-    const res = await SELF.fetch('https://example.com/nonexistent-route', {
-      headers: { Accept: 'application/json' },
+    const res = await fetchGet('/nonexistent-route', {
+      Accept: 'application/json',
     })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ detail: 'Not Found' })

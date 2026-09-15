@@ -140,6 +140,12 @@ export function rocketsListView(rockets: RocketListItem[]): HtmlEscapedString | 
         </div>
         <div class="flex items-center space-x-3">
           <a
+            href="/rockets/import"
+            class="inline-flex items-center px-4 py-2 border border-slate-700 text-sm font-semibold rounded-lg shadow-sm text-slate-200 bg-slate-800 hover:bg-slate-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 focus:ring-offset-slate-900 transition-colors"
+          >
+            <span class="mr-1.5 text-base">📥</span> Import OpenRocket (.ork)
+          </a>
+          <a
             href="/rockets/new"
             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg shadow-sm text-slate-950 bg-brand-400 hover:bg-brand-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 focus:ring-offset-slate-900 transition-colors"
           >
@@ -156,12 +162,20 @@ export function rocketsListView(rockets: RocketListItem[]): HtmlEscapedString | 
               <p class="text-slate-400 text-sm mb-6">
                 Your hangar is currently empty. Register your first rocket airframe to establish baseline mass and aerodynamic parameters, then begin logging flights.
               </p>
-              <a
-                href="/rockets/new"
-                class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg text-slate-950 bg-brand-400 hover:bg-brand-300 transition-colors"
-              >
-                + Register First Rocket
-              </a>
+              <div class="flex flex-wrap items-center justify-center gap-3">
+                <a
+                  href="/rockets/import"
+                  class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg text-slate-200 bg-slate-800 hover:bg-slate-700 transition-colors"
+                >
+                  📥 Import OpenRocket (.ork)
+                </a>
+                <a
+                  href="/rockets/new"
+                  class="inline-flex items-center px-4 py-2 text-sm font-semibold rounded-lg text-slate-950 bg-brand-400 hover:bg-brand-300 transition-colors"
+                >
+                  + Register First Rocket
+                </a>
+              </div>
             </div>
           `
         : html`
@@ -677,6 +691,23 @@ export function newRocketFormView(errorMessage?: string): HtmlEscapedString | Pr
         <p class="mt-1 text-sm text-slate-400">
           Register a new rocket airframe and establish its initial Version 1 configuration snapshot with baseline mass and aerodynamic properties.
         </p>
+      </div>
+
+      <!-- OpenRocket Import Callout Banner -->
+      <div class="bg-indigo-950/40 border border-indigo-500/30 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm">
+        <div class="flex items-center gap-3">
+          <span class="text-xl">🚀</span>
+          <div>
+            <span class="font-semibold text-indigo-200">Have an OpenRocket design file?</span>
+            <p class="text-xs text-slate-400">Import your airframe geometry, mass, and motor mount dimensions automatically from a .ork file.</p>
+          </div>
+        </div>
+        <a
+          href="/rockets/import"
+          class="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shrink-0"
+        >
+          📥 Import OpenRocket (.ork)
+        </a>
       </div>
 
       ${errorMessage
@@ -1892,3 +1923,154 @@ export function editConfigFormView(
   `
 }
 
+/**
+ * OpenRocket (.ork) Airframe Import View (Requirement R2).
+ * Form accepting .ork archive file uploads with validation guidelines and error alerts.
+ */
+export function importRocketFormView(errorMessage?: string): HtmlEscapedString | Promise<HtmlEscapedString> {
+  return html`
+    <div class="max-w-3xl mx-auto space-y-6">
+      <!-- Breadcrumbs -->
+      <nav class="flex items-center space-x-2 text-sm text-slate-400">
+        <a href="/rockets" class="hover:text-white transition-colors">Rockets</a>
+        <span>/</span>
+        <span class="text-white font-medium">Import OpenRocket (.ork)</span>
+      </nav>
+
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">📥 Import OpenRocket Airframe</h1>
+        <p class="mt-1 text-sm text-slate-400">
+          Upload a standard OpenRocket (.ork) design archive to automatically extract rocket dimensions, dry mass, stage specs, fin counts, and motor mount sizing.
+        </p>
+      </div>
+
+      ${errorMessage
+        ? html`
+            <div class="p-4 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 text-sm flex items-start gap-2">
+              <span class="text-rose-400 font-bold">⚠️</span>
+              <div>
+                <strong>Import Error:</strong> ${errorMessage}
+              </div>
+            </div>
+          `
+        : ''}
+
+      <form
+        action="/rockets/import"
+        method="POST"
+        enctype="multipart/form-data"
+        class="space-y-6 bg-slate-950 border border-slate-800 rounded-xl p-6 sm:p-8 shadow-sm"
+      >
+        <!-- File Input Area -->
+        <div>
+          <label class="block text-sm font-semibold text-white mb-2">
+            OpenRocket File (.ork) <span class="text-rose-400">*</span>
+          </label>
+          <div
+            id="drop-zone"
+            class="border-2 border-dashed border-slate-700 hover:border-brand-400/80 rounded-xl p-8 text-center transition-all bg-slate-900/40 cursor-pointer"
+            onclick="document.getElementById('file').click();"
+          >
+            <div class="space-y-2">
+              <span class="text-4xl block pointer-events-none">📦</span>
+              <div class="text-sm text-slate-300 pointer-events-none">
+                <label for="file" class="relative cursor-pointer rounded-md font-medium text-brand-400 hover:text-brand-300 focus-within:outline-none">
+                  <span>Upload an .ork file</span>
+                  <input
+                    id="file"
+                    name="file"
+                    type="file"
+                    accept=".ork,application/zip"
+                    required
+                    class="sr-only"
+                    onchange="if (this.files[0]) document.getElementById('selected-filename').textContent = 'Selected: ' + this.files[0].name + ' (' + (this.files[0].size / 1024).toFixed(1) + ' KB)';"
+                  />
+                </label>
+                <span class="text-slate-400"> or drag and drop</span>
+              </div>
+              <p class="text-xs text-slate-500 pointer-events-none">Standard OpenRocket archive up to 10 MB</p>
+              <div id="selected-filename" class="text-xs font-semibold text-brand-300 pt-2 pointer-events-none"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Extraction Guidelines Card -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-2 text-xs text-slate-400">
+          <h3 class="font-semibold text-slate-200 flex items-center gap-1.5">
+            <span>ℹ️</span> What will be extracted from your design:
+          </h3>
+          <ul class="grid grid-cols-1 sm:grid-cols-2 gap-2 list-disc list-inside">
+            <li>Rocket airframe name & stages</li>
+            <li>Total axial length (mm)</li>
+            <li>Maximum outer body diameter (mm)</li>
+            <li>Total dry mass & loaded mass (g)</li>
+            <li>Aerodynamic stability margin (calibers)</li>
+            <li>Motor mount tube diameter (mm)</li>
+            <li>Fin count & recovery devices</li>
+            <li>Center of gravity (CG) & pressure (CP)</li>
+          </ul>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-800">
+          <a
+            href="/rockets"
+            class="px-4 py-2 border border-slate-700 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-900 transition-colors"
+          >
+            Cancel
+          </a>
+          <button
+            type="submit"
+            class="inline-flex items-center px-5 py-2 border border-transparent text-sm font-semibold rounded-lg shadow-sm text-slate-950 bg-brand-400 hover:bg-brand-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500 focus:ring-offset-slate-900 transition-colors"
+          >
+            🚀 Import Rocket
+          </button>
+        </div>
+      </form>
+
+      <!-- Drag and drop event handling script -->
+      <script>
+        (function() {
+          var dropZone = document.getElementById('drop-zone');
+          var fileInput = document.getElementById('file');
+          var fileNameDisplay = document.getElementById('selected-filename');
+          if (!dropZone || !fileInput) return;
+
+          ['dragenter', 'dragover'].forEach(function(eventName) {
+            dropZone.addEventListener(eventName, function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              dropZone.classList.add('border-brand-400', 'bg-slate-800/80');
+            }, false);
+          });
+
+          ['dragleave', 'dragend'].forEach(function(eventName) {
+            dropZone.addEventListener(eventName, function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              dropZone.classList.remove('border-brand-400', 'bg-slate-800/80');
+            }, false);
+          });
+
+          dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('border-brand-400', 'bg-slate-800/80');
+
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+              fileInput.files = e.dataTransfer.files;
+              var file = e.dataTransfer.files[0];
+              if (fileNameDisplay) {
+                fileNameDisplay.textContent = 'Selected: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+              }
+            }
+          }, false);
+
+          // Prevent window-level accidental drop navigation
+          window.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
+          window.addEventListener('drop', function(e) { e.preventDefault(); }, false);
+        })();
+      </script>
+    </div>
+  `
+}

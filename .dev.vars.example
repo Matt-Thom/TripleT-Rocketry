@@ -6,3 +6,6 @@
 # to do with the Worker and must not be bound into it.
 #
 # The Worker's non-secret configuration lives in wrangler.jsonc `vars`.
+#
+# Session cryptographic secret (HMAC-SHA256 signing key - BL-03):
+AUTH_SECRET=triplet-rocketry-auth-secret-key-local-dev

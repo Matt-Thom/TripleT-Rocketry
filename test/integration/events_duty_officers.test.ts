@@ -94,6 +94,7 @@ describe('Milestone 3 (Requirement R3): Launch Events Plain Text Duty Officers &
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'JSON High Altitude Meet',
@@ -361,6 +362,7 @@ describe('Milestone 3 (Requirement R3): Launch Events Plain Text Duty Officers &
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Aliens Weyland Launch',
@@ -428,6 +430,7 @@ describe('Milestone 3 (Requirement R3): Launch Events Plain Text Duty Officers &
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Lake Hart Salt Flats',

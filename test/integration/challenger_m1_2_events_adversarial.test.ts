@@ -517,6 +517,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Updated via Full JSON API',
@@ -562,6 +563,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'After Camel Update',
@@ -596,6 +598,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Stripped Event',
@@ -627,7 +630,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
       // Missing name
       const resNoName = await SELF.fetch(`https://example.com/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({ name: '', launch_site_id: site.id }),
       })
       expect(resNoName.status).toBe(400)
@@ -637,7 +640,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
       // Missing launch site
       const resNoSite = await SELF.fetch(`https://example.com/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({ name: 'New Name', launch_site_id: '' }),
       })
       expect(resNoSite.status).toBe(400)
@@ -647,7 +650,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
       // Non-existent launch site
       const resFakeSite = await SELF.fetch(`https://example.com/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({ name: 'New Name', launch_site_id: 'non-existent-site-id' }),
       })
       expect(resFakeSite.status).toBe(400)
@@ -657,7 +660,7 @@ describe('Challenger M1-2: Launch Events Usability & Adversarial Verification', 
       // Non-existent event
       const resFakeEvt = await SELF.fetch('https://example.com/events/non-existent-event-id', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-flyer-email': 'flyer@rocketry.local' },
         body: JSON.stringify({ name: 'Ghost Event', launch_site_id: site.id }),
       })
       expect(resFakeEvt.status).toBe(404)

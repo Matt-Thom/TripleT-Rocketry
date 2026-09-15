@@ -163,26 +163,19 @@ describe('Requirement 1: Authenticated Access & Multi-User Support', () => {
     })
   })
 
-  describe('Cloudflare Access Single Sign-On Integration', () => {
-    it('authenticates seamlessly when Cf-Access-Authenticated-User-Email header is present', async () => {
-      const res = await fetchGet('/rockets', {
-        'cf-access-authenticated-user-email': 'john.doe@thom.au',
-      })
+  describe('Cloudflare Access Header Ignored (Email/Password/Passkey Only)', () => {
+    it('strictly ignores Cf-Access-Authenticated-User-Email and requires direct login', async () => {
+      const res = await fetchGet(
+        '/rockets',
+        {
+          'cf-access-authenticated-user-email': 'john.doe@thom.au',
+          'x-no-auth': 'true',
+        },
+        { redirect: 'manual' }
+      )
 
-      assertHtmlResponse(res, 200)
-      const html = await res.text()
-      expect(html).toContain('Rockets')
-      expect(html).toContain('john.doe')
-
-      // Verify auto-provisioned user in D1
-      const db = getDb()
-      const [user] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.email, 'john.doe@thom.au'))
-
-      expect(user).toBeDefined()
-      expect(user.displayName).toBe('john.doe')
+      expect(res.status).toBe(302)
+      expect(res.headers.get('location')).toBe('/login?redirect=%2Frockets')
     })
   })
 

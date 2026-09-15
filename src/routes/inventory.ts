@@ -17,7 +17,6 @@ import { Hono } from 'hono'
 import { and, asc, desc, eq, isNull } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import * as schema from '../db/schema'
-import { getActiveFlyer } from '../db/context'
 import type { TraceContext } from '../logging'
 import {
   inventoryRowFragment,
@@ -27,6 +26,8 @@ import {
   inventoryHubView,
   addComponentFormView,
   editComponentFormView,
+  addMotorInventoryFormView,
+  adjustInventoryFormView,
   custodyLedgerView,
   recordTransactionFormView,
   getCategoryBadgeClasses,
@@ -40,11 +41,15 @@ import {
 import { pageLayout } from '../views/layout'
 import { html } from 'hono/html'
 import {
-  storageSitesListView,
-  storageSiteFormView,
-  storageSiteDetailView,
-  type StorageSite,
-} from '../views/storage_sites'
+  parseStorageSiteInput,
+  listStorageSitesHandler,
+  newStorageSiteFormHandler,
+  createStorageSiteHandler,
+  viewStorageSiteHandler,
+  editStorageSiteFormHandler,
+  updateStorageSiteHandler,
+  deleteStorageSiteHandler,
+} from './sites'
 
 type Bindings = {
   DB: D1Database
@@ -59,11 +64,29 @@ type Variables = {
 export const inventoryRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 /**
+ * Access control middleware: Enforce authenticated flyer across all /inventory routes.
+ */
+inventoryRouter.use('*', async (c, next) => {
+  const flyer = (c.get as any)('user')
+  if (!flyer) {
+    const acceptsHtml = c.req.header('accept')?.includes('text/html')
+    if (acceptsHtml) {
+      const targetUrl = encodeURIComponent(
+        c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''),
+      )
+      return c.redirect(`/login?redirect=${targetUrl}`, 302)
+    }
+    return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+  }
+  await next()
+})
+
+/**
  * List User Inventory Hub (GET /inventory).
  */
 export async function listInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const query = c.req.query()
   const filter = query.filter || 'all'
 
@@ -211,6 +234,16 @@ export async function listInventoryHandler(c: any) {
   const limitG = userRegion === 'US' ? 22680 : 3000
   const storageSummary = calculateStorageSummary(itemsForStorage, limitG, userRegion)
 
+  const isJson = c.req.header('accept')?.includes('application/json')
+  if (isJson) {
+    return c.json({
+      motors: motorRows,
+      components: componentRows,
+      transactions: transactionRows,
+      storageSummary,
+    })
+  }
+
   const content = inventoryHubView({
     motors: motorRows,
     components: componentRows,
@@ -237,7 +270,7 @@ export async function listInventoryHandler(c: any) {
  */
 export async function addInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''
@@ -371,6 +404,40 @@ export async function adjustInventoryHandler(c: any) {
     return c.text('<tr class="text-red-500"><td colspan="7">Inventory item not found</td></tr>', 404)
   }
 
+  // If GET request without adjust action parameters, render the full themed adjust page
+  if (c.req.method === 'GET' && !action && !field && query.delta === undefined) {
+    const [motor] = await db
+      .select()
+      .from(schema.motors)
+      .where(eq(schema.motors.id, inv.motorId))
+      .limit(1)
+
+    const item: InventoryItemWithMotor = {
+      ...inv,
+      motor: motor || {
+        id: inv.motorId,
+        manufacturer: 'Unknown',
+        model: 'Unknown',
+        impulseClass: null,
+        delayS: null,
+        diameterMm: null,
+        totalImpulseNs: null,
+      },
+    }
+
+    const flyer = (c.get as any)('user')
+    const content = adjustInventoryFormView(item)
+    const fullHtml = pageLayout({
+      title: `Adjust Motor Stock — ${item.motor?.manufacturer || ''} ${item.motor?.model || 'Motor'}`,
+      activeTab: 'inventory',
+      content,
+      user: flyer,
+    })
+    return c.html(fullHtml, 200, {
+      'Content-Type': 'text/html; charset=utf-8',
+    })
+  }
+
   let newOnHand = inv.quantityOnHand
   let newExpended = inv.expendedCount
   let txType = 'audit_adjustment'
@@ -427,6 +494,14 @@ export async function adjustInventoryHandler(c: any) {
     notes: `Quick adjust action: ${action || field || 'stock update'}`,
   })
 
+  // If standard non-HTMX form submission (e.g. from /motors/:id "Log Expend" or themed form), redirect back
+  const isHtmx = c.req.header('HX-Request') === 'true'
+  if (!isHtmx && c.req.method === 'POST') {
+    const referer = c.req.header('Referer')
+    const redirectUrl = referer && !referer.endsWith('/adjust') ? referer : '/inventory'
+    return c.redirect(redirectUrl, 303)
+  }
+
   // Retrieve motor specs for rendering the row
   const [motor] = await db
     .select()
@@ -455,6 +530,38 @@ export async function adjustInventoryHandler(c: any) {
 }
 
 /**
+ * New Motor Inventory Form Handler (GET /inventory/motors/new).
+ */
+export async function newMotorInventoryFormHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user')
+
+  const catalogMotors = await db
+    .select()
+    .from(schema.motors)
+    .where(isNull(schema.motors.deletedAt))
+    .orderBy(asc(schema.motors.impulseClass), asc(schema.motors.manufacturer), asc(schema.motors.model))
+
+  const userStorageSites = await db
+    .select()
+    .from(schema.storageSites)
+    .where(and(eq(schema.storageSites.userId, flyer.id), isNull(schema.storageSites.deletedAt)))
+    .orderBy(asc(schema.storageSites.name))
+
+  const content = addMotorInventoryFormView(catalogMotors, userStorageSites)
+  const fullHtml = pageLayout({
+    title: 'Add Motor to Inventory',
+    activeTab: 'inventory',
+    content,
+    user: flyer,
+  })
+
+  return c.html(fullHtml, 200, {
+    'Content-Type': 'text/html; charset=utf-8',
+  })
+}
+
+/**
  * Dismiss / Archive Zero-Quantity Motor from Active Inventory (POST /inventory/:id/dismiss).
  *
  * Sets `deletedAt = Date.now()` on `schema.motorInventories` when `quantityOnHand === 0`.
@@ -466,7 +573,7 @@ export async function adjustInventoryHandler(c: any) {
  */
 export async function dismissInventoryHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const id = c.req.param('id')
 
   if (!id) {
@@ -549,11 +656,257 @@ export async function dismissInventoryHandler(c: any) {
 }
 
 /**
+ * Helper to process motor deletion lifecycle according to Requirement R4:
+ * - Branch A (Hard Delete): If 0 flight logs and 0 transactions, delete row from motor_inventories.
+ * - Branch B (Regulatory Disposal & Soft Delete): If >0 flight logs or >0 transactions, record
+ *   a 'disposed' transaction in inventory_transactions, set deletedAt = now, disposedCount += quantityOnHand,
+ *   and quantityOnHand = 0.
+ */
+export async function processMotorDeletion(
+  db: any,
+  item: typeof schema.motorInventories.$inferSelect,
+  userId: string,
+): Promise<'deleted' | 'disposed'> {
+  // Query linked flights
+  const linkedFlights = await db
+    .select({ id: schema.flights.id })
+    .from(schema.flights)
+    .where(eq(schema.flights.motorInventoryId, item.id))
+
+  // Query linked ledger transactions
+  const linkedTransactions = await db
+    .select({ id: schema.inventoryTransactions.id })
+    .from(schema.inventoryTransactions)
+    .where(eq(schema.inventoryTransactions.motorInventoryId, item.id))
+
+  if (linkedFlights.length === 0 && linkedTransactions.length === 0) {
+    // Branch A: Permanent Hard Deletion
+    await db
+      .delete(schema.motorInventories)
+      .where(eq(schema.motorInventories.id, item.id))
+    return 'deleted'
+  } else {
+    // Branch B: Regulatory Disposal & Soft Deletion
+    const now = Date.now()
+    const today = new Date().toISOString().slice(0, 10)
+
+    // 1. Insert audit ledger row in inventory_transactions
+    await db.insert(schema.inventoryTransactions).values({
+      id: crypto.randomUUID(),
+      userId,
+      motorInventoryId: item.id,
+      transactionType: 'disposed',
+      quantity: item.quantityOnHand,
+      transactionDate: today,
+      notes: 'Regulatory disposal of motor inventory record',
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    // 2. Update motor_inventories
+    await db
+      .update(schema.motorInventories)
+      .set({
+        deletedAt: now,
+        disposedCount: (item.disposedCount || 0) + item.quantityOnHand,
+        quantityOnHand: 0,
+        updatedAt: now,
+      })
+      .where(eq(schema.motorInventories.id, item.id))
+
+    return 'disposed'
+  }
+}
+
+/**
+ * Single Motor Deletion Handler (POST /inventory/motors/:id/delete).
+ *
+ * Implements Requirement R4:
+ * - Hard deletes if 0 flights and 0 transactions.
+ * - Regulatory disposal transaction + soft delete if flights or transactions exist.
+ * - Supports 303 redirect for HTML forms, 200 JSON for API requests.
+ */
+export async function deleteMotorHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user')
+
+  const isJson =
+    c.req.header('accept')?.includes('application/json') ||
+    c.req.header('content-type')?.includes('application/json')
+
+  if (!flyer) {
+    if (isJson) {
+      return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+    }
+    return c.redirect('/login', 302)
+  }
+
+  const id = c.req.param('id')
+  if (!id) {
+    return c.json({ error: 'Missing inventory ID parameter' }, 400)
+  }
+
+  // Find active inventory item
+  const [item] = await db
+    .select()
+    .from(schema.motorInventories)
+    .where(
+      and(
+        eq(schema.motorInventories.id, id),
+        isNull(schema.motorInventories.deletedAt),
+      ),
+    )
+    .limit(1)
+
+  if (!item) {
+    if (isJson) {
+      return c.json({ error: 'Motor inventory record not found' }, 404)
+    }
+    return c.text('Motor inventory record not found', 404)
+  }
+
+  // Multi-tenant authorization check
+  if (item.userId !== flyer.id) {
+    if (isJson) {
+      return c.json({ error: 'Unauthorized: Motor inventory item belongs to another flyer' }, 403)
+    }
+    return c.text('Unauthorized', 403)
+  }
+
+  const action = await processMotorDeletion(db, item, flyer.id)
+
+  if (isJson) {
+    return c.json({ success: true, id, action }, 200)
+  }
+
+  return c.redirect('/inventory', 303)
+}
+
+/**
+ * Helper to extract IDs from various payload formats:
+ * - JSON: { ids: string[] } or { selected_ids: string[] } or { ids: "id1,id2" }
+ * - Form data: selected_ids, selected_ids[], ids, ids[]
+ */
+function extractIdsFromPayload(body: any): string[] {
+  if (!body) return []
+  const raw =
+    body.selected_ids ??
+    body['selected_ids[]'] ??
+    body.ids ??
+    body['ids[]'] ??
+    body.id ??
+    []
+  let ids: string[] = []
+  if (Array.isArray(raw)) {
+    ids = raw.map((x) => String(x).trim()).filter(Boolean)
+  } else if (typeof raw === 'string') {
+    if (raw.includes(',')) {
+      ids = raw.split(',').map((x) => x.trim()).filter(Boolean)
+    } else if (raw.trim().length > 0) {
+      ids = [raw.trim()]
+    }
+  }
+  return Array.from(new Set(ids))
+}
+
+/**
+ * Batch Motor Deletion Handler (POST /inventory/motors/batch-delete).
+ *
+ * Implements Requirement R4:
+ * - Accepts multiple IDs via form data or JSON.
+ * - Executes removal lifecycle (hard delete or regulatory disposal) for each item.
+ * - Returns 303 redirect for HTML forms, 200 JSON for API requests.
+ */
+export async function batchDeleteMotorsHandler(c: any) {
+  const db = drizzle(c.env.DB, { schema })
+  const flyer = (c.get as any)('user')
+
+  const isJson =
+    c.req.header('accept')?.includes('application/json') ||
+    c.req.header('content-type')?.includes('application/json')
+
+  if (!flyer) {
+    if (isJson) {
+      return c.json({ error: 'Unauthorized', message: 'Authentication required' }, 401)
+    }
+    return c.redirect('/login', 302)
+  }
+
+  let body: any = {}
+  const contentType = c.req.header('content-type') || ''
+  let ids: string[] = []
+
+  if (contentType.includes('application/json')) {
+    body = await c.req.json().catch(() => ({}))
+    ids = extractIdsFromPayload(body)
+  } else if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+    const formData = await c.req.raw.clone().formData().catch(() => null)
+    if (formData) {
+      const list = [
+        ...formData.getAll('selected_ids'),
+        ...formData.getAll('selected_ids[]'),
+        ...formData.getAll('ids'),
+        ...formData.getAll('ids[]'),
+        ...formData.getAll('id'),
+      ]
+      ids = list.map((x) => String(x).trim()).filter(Boolean)
+    }
+    if (ids.length === 0) {
+      body = await c.req.parseBody({ all: true }).catch(() => ({}))
+      ids = extractIdsFromPayload(body)
+    }
+  } else {
+    body = await c.req.json().catch(async () => await c.req.parseBody({ all: true }).catch(() => ({})))
+    ids = extractIdsFromPayload(body)
+  }
+  ids = Array.from(new Set(ids))
+
+  if (ids.length === 0) {
+    if (isJson) {
+      return c.json({ success: true, deleted: 0, disposed: 0, message: 'No items selected' }, 200)
+    }
+    return c.redirect('/inventory', 303)
+  }
+
+  let deletedCount = 0
+  let disposedCount = 0
+
+  for (const id of ids) {
+    const [item] = await db
+      .select()
+      .from(schema.motorInventories)
+      .where(
+        and(
+          eq(schema.motorInventories.id, id),
+          eq(schema.motorInventories.userId, flyer.id),
+          isNull(schema.motorInventories.deletedAt),
+        ),
+      )
+      .limit(1)
+
+    if (!item) continue
+
+    const action = await processMotorDeletion(db, item, flyer.id)
+    if (action === 'deleted') {
+      deletedCount++
+    } else {
+      disposedCount++
+    }
+  }
+
+  if (isJson) {
+    return c.json({ success: true, deleted: deletedCount, disposed: disposedCount }, 200)
+  }
+
+  return c.redirect('/inventory', 303)
+}
+
+/**
  * Component Form View (GET /inventory/components/new).
  */
 export async function newComponentFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
   const content = addComponentFormView()
   const fullHtml = pageLayout({
     title: 'Add Component',
@@ -571,7 +924,7 @@ export async function newComponentFormHandler(c: any) {
  */
 export async function addComponentHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''
@@ -758,7 +1111,7 @@ export async function adjustComponentHandler(c: any) {
  */
 export async function editComponentFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const id = c.req.param('id')
 
   const [comp] = await db
@@ -789,7 +1142,7 @@ export async function editComponentFormHandler(c: any) {
  */
 export async function updateComponentHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const id = c.req.param('id')
 
   let body: any = {}
@@ -855,7 +1208,7 @@ export async function updateComponentHandler(c: any) {
  */
 export async function custodyLedgerHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   const transactions = await db
     .select({
@@ -929,7 +1282,7 @@ export async function custodyLedgerHandler(c: any) {
  */
 export async function newTransactionFormHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
+  const flyer = (c.get as any)('user')
   const query = c.req.query()
 
   const motorInvId = query.motor_inventory_id || query.motorInventoryId
@@ -1003,7 +1356,7 @@ export async function newTransactionFormHandler(c: any) {
  */
 export async function createTransactionHandler(c: any) {
   const db = drizzle(c.env.DB, { schema })
-  const flyer = await getActiveFlyer(db)
+  const flyer = (c.get as any)('user')
 
   let body: any = {}
   const contentType = c.req.header('content-type') || ''
@@ -1205,8 +1558,15 @@ export async function createTransactionHandler(c: any) {
 // Router mounts
 inventoryRouter.get('/', listInventoryHandler)
 inventoryRouter.get('/inventory', listInventoryHandler)
+inventoryRouter.get('/motors', listInventoryHandler)
+inventoryRouter.get('/inventory/motors', listInventoryHandler)
+// New Motor form
+inventoryRouter.get('/motors/new', newMotorInventoryFormHandler)
+inventoryRouter.get('/inventory/motors/new', newMotorInventoryFormHandler)
 inventoryRouter.post('/', addInventoryHandler)
 inventoryRouter.post('/inventory', addInventoryHandler)
+inventoryRouter.post('/motors', addInventoryHandler)
+inventoryRouter.post('/inventory/motors', addInventoryHandler)
 
 // Motor adjust
 inventoryRouter.post('/:id/adjust', adjustInventoryHandler)
@@ -1225,456 +1585,79 @@ inventoryRouter.post('/components/:id', updateComponentHandler)
 inventoryRouter.get('/transactions', custodyLedgerHandler)
 inventoryRouter.get('/transactions/new', newTransactionFormHandler)
 inventoryRouter.post('/transactions', createTransactionHandler)
+// ---------------------------------------------------------------------------
+// Propellant Storage Sites Reorganization (Requirement R3)
+// ---------------------------------------------------------------------------
 
-/**
- * Helper to parse storage site input supporting both form-encoded and JSON payloads.
- */
-export async function parseStorageSiteInput(c: any) {
-  const contentType = c.req.header('content-type') || ''
-  const isJson = contentType.includes('application/json')
-  let body: any = {}
-  if (isJson) {
-    body = await c.req.json().catch(() => ({}))
-  } else {
-    body = await c.req.parseBody().catch(() => ({}))
-  }
-
-  const name = String(body.name || '').trim()
-  const locationRaw = body.location !== undefined && body.location !== null ? String(body.location).trim() : null
-  const location = locationRaw && locationRaw.length > 0 ? locationRaw : null
-
-  const rawCapacity = body.capacity_kg !== undefined ? body.capacity_kg : body.capacityKg
-  let capacityKg = 0
-  if (rawCapacity !== undefined && rawCapacity !== null && rawCapacity !== '') {
-    const parsed = parseFloat(String(rawCapacity))
-    capacityKg = isNaN(parsed) ? 0 : parsed
-  }
-
-  const rawPermit = body.permit_number !== undefined ? body.permit_number : body.permitNumber
-  const permitTrimmed = rawPermit !== undefined && rawPermit !== null ? String(rawPermit).trim() : null
-  const permitNumber = permitTrimmed && permitTrimmed.length > 0 ? permitTrimmed : null
-
-  const notesRaw = body.notes !== undefined && body.notes !== null ? String(body.notes).trim() : null
-  const notes = notesRaw && notesRaw.length > 0 ? notesRaw : null
-
-  return { name, location, capacityKg, permitNumber, notes, isJson }
+export {
+  parseStorageSiteInput,
+  listStorageSitesHandler,
+  newStorageSiteFormHandler,
+  createStorageSiteHandler,
+  viewStorageSiteHandler,
+  editStorageSiteFormHandler,
+  updateStorageSiteHandler,
+  deleteStorageSiteHandler,
 }
 
-/**
- * List Storage Sites (GET /inventory/storage-sites).
- */
-export async function listStorageSitesHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
-
-  const sites = await db
-    .select()
-    .from(schema.storageSites)
-    .where(
-      and(
-        eq(schema.storageSites.userId, flyer.id),
-        isNull(schema.storageSites.deletedAt),
-      ),
-    )
-    .orderBy(asc(schema.storageSites.name))
-
-  if (c.req.header('accept')?.includes('application/json')) {
-    return c.json(sites)
-  }
-
-  const content = storageSitesListView(sites, flyer)
-  const fullHtml = pageLayout({
-    title: 'Propellant Storage Sites & Physical Storage Magazines',
-    activeTab: 'inventory',
-    content,
-    user: flyer,
-  })
-
-  return c.html(fullHtml, 200, {
-    'Content-Type': 'text/html; charset=utf-8',
-  })
+// Legacy Storage Sites GET Redirects (Requirement R3.2)
+// 301 Permanent Redirects to preserve bookmarks and external links (preserving query parameters)
+function withQuery(urlStr: string, targetPath: string): string {
+  const search = new URL(urlStr, 'http://localhost').search
+  return `${targetPath}${search}`
 }
 
-/**
- * Storage Site Create Form (GET /inventory/storage-sites/new).
- */
-export async function newStorageSiteFormHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
+inventoryRouter.get('/storage-sites/new', (c) => c.redirect(withQuery(c.req.url, '/sites/storage-sites/new'), 301))
+inventoryRouter.get('/inventory/storage-sites/new', (c) => c.redirect(withQuery(c.req.url, '/sites/storage-sites/new'), 301))
 
-  const content = storageSiteFormView({
-    isNew: true,
-    user: flyer,
-  })
-  const fullHtml = pageLayout({
-    title: 'New Storage Site',
-    activeTab: 'inventory',
-    content,
-    user: flyer,
-  })
+inventoryRouter.get('/storage-sites/:id/edit', (c) => c.redirect(withQuery(c.req.url, `/sites/storage-sites/${c.req.param('id')}/edit`), 301))
+inventoryRouter.get('/inventory/storage-sites/:id/edit', (c) => c.redirect(withQuery(c.req.url, `/sites/storage-sites/${c.req.param('id')}/edit`), 301))
 
-  return c.html(fullHtml, 200, {
-    'Content-Type': 'text/html; charset=utf-8',
-  })
-}
+inventoryRouter.get('/storage-sites/:id', (c) => c.redirect(withQuery(c.req.url, `/sites/storage-sites/${c.req.param('id')}`), 301))
+inventoryRouter.get('/inventory/storage-sites/:id', (c) => c.redirect(withQuery(c.req.url, `/sites/storage-sites/${c.req.param('id')}`), 301))
 
-/**
- * Create Storage Site (POST /inventory/storage-sites).
- */
-export async function createStorageSiteHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
+inventoryRouter.get('/storage-sites', (c) => c.redirect(withQuery(c.req.url, '/sites/storage-sites'), 301))
+inventoryRouter.get('/inventory/storage-sites', (c) => c.redirect(withQuery(c.req.url, '/sites/storage-sites'), 301))
+inventoryRouter.get('/storage-sites/*', (c) => {
+  const rawSub = c.req.path.replace(/^\/inventory\/storage-sites/, '').replace(/^\/storage-sites/, '')
+  const sub = rawSub === '/' ? '' : rawSub
+  return c.redirect(withQuery(c.req.url, `/sites/storage-sites${sub}`), 301)
+})
+inventoryRouter.get('/inventory/storage-sites/*', (c) => {
+  const rawSub = c.req.path.replace(/^\/inventory\/storage-sites/, '').replace(/^\/storage-sites/, '')
+  const sub = rawSub === '/' ? '' : rawSub
+  return c.redirect(withQuery(c.req.url, `/sites/storage-sites${sub}`), 301)
+})
 
-  const input = await parseStorageSiteInput(c)
-
-  if (!input.name) {
-    const errorMsg = 'Storage site name is required'
-    if (input.isJson) return c.json({ error: errorMsg }, 400)
-    const content = storageSiteFormView({
-      site: input,
-      error: errorMsg,
-      isNew: true,
-      user: flyer,
-    })
-    return c.html(
-      pageLayout({ title: 'New Storage Site', activeTab: 'inventory', content, user: flyer }),
-      400,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
-  // SafeWork SA Compliance Rule: capacityKg > 3.0 strictly requires regulatory permit
-  if (input.capacityKg > 3.0 && (!input.permitNumber || input.permitNumber.trim().length === 0)) {
-    const errorMsg = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg'
-    if (input.isJson) return c.json({ error: errorMsg }, 400)
-    const content = storageSiteFormView({
-      site: input,
-      error: errorMsg,
-      isNew: true,
-      user: flyer,
-    })
-    return c.html(
-      pageLayout({ title: 'New Storage Site', activeTab: 'inventory', content, user: flyer }),
-      400,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
-  const [site] = await db
-    .insert(schema.storageSites)
-    .values({
-      userId: flyer.id,
-      name: input.name,
-      location: input.location,
-      capacityKg: input.capacityKg,
-      permitNumber: input.permitNumber,
-      notes: input.notes,
-    })
-    .returning()
-
-  if (input.isJson) {
-    return c.json(site, 201)
-  }
-
-  return c.redirect('/inventory/storage-sites', 303)
-}
-
-/**
- * View Storage Site Details (GET /inventory/storage-sites/:id).
- */
-export async function viewStorageSiteHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
-  const id = c.req.param('id')
-
-  const [site] = await db
-    .select()
-    .from(schema.storageSites)
-    .where(
-      and(
-        eq(schema.storageSites.id, id),
-        eq(schema.storageSites.userId, flyer.id),
-        isNull(schema.storageSites.deletedAt),
-      ),
-    )
-    .limit(1)
-
-  if (!site) {
-    if (c.req.header('accept')?.includes('application/json')) {
-      return c.json({ error: 'Storage site not found' }, 404)
-    }
-    return c.html(
-      pageLayout({
-        title: 'Site Not Found',
-        activeTab: 'inventory',
-        user: flyer,
-        content: html`
-          <div class="max-w-md mx-auto bg-slate-850 border border-slate-800 rounded-xl p-6 text-center">
-            <h2 class="text-xl font-bold text-slate-200">Storage Site Not Found</h2>
-            <p class="text-sm text-slate-400 mt-2">The requested storage site does not exist or has been removed.</p>
-            <a href="/inventory/storage-sites" class="mt-4 inline-block px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm">&larr; Back to Storage Sites</a>
-          </div>
-        `,
-      }),
-      404,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
-  // Find motors and components located at this site
-  const siteMotors = await db
-    .select({
-      id: schema.motorInventories.id,
-      quantityOnHand: schema.motorInventories.quantityOnHand,
-      storageLocation: schema.motorInventories.storageLocation,
-      motor: {
-        manufacturer: schema.motors.manufacturer,
-        model: schema.motors.model,
-        impulseClass: schema.motors.impulseClass,
-        propellantWeightG: schema.motors.propellantWeightG,
-        weightG: schema.motors.weightG,
-      },
-    })
-    .from(schema.motorInventories)
-    .innerJoin(schema.motors, eq(schema.motorInventories.motorId, schema.motors.id))
-    .where(
-      and(
-        eq(schema.motorInventories.userId, flyer.id),
-        isNull(schema.motorInventories.deletedAt),
-      ),
-    )
-
-  const siteComponents = await db
-    .select()
-    .from(schema.components)
-    .where(
-      and(
-        eq(schema.components.userId, flyer.id),
-        isNull(schema.components.deletedAt),
-      ),
-    )
-
-  const matchingMotors = siteMotors.filter(
-    (m) =>
-      m.storageLocation &&
-      (m.storageLocation.toLowerCase() === site.name.toLowerCase() ||
-        (site.location && m.storageLocation.toLowerCase() === site.location.toLowerCase())),
-  )
-  const matchingComponents = siteComponents.filter(
-    (comp) =>
-      comp.storageLocation &&
-      (comp.storageLocation.toLowerCase() === site.name.toLowerCase() ||
-        (site.location && comp.storageLocation.toLowerCase() === site.location.toLowerCase())),
-  )
-
-  if (c.req.header('accept')?.includes('application/json')) {
-    return c.json({ site, motors: matchingMotors, components: matchingComponents })
-  }
-
-  const content = storageSiteDetailView(site, { motors: matchingMotors, components: matchingComponents }, flyer)
-  const fullHtml = pageLayout({
-    title: `Storage Site — ${site.name}`,
-    activeTab: 'inventory',
-    content,
-    user: flyer,
-  })
-
-  return c.html(fullHtml, 200, {
-    'Content-Type': 'text/html; charset=utf-8',
-  })
-}
-
-/**
- * Storage Site Edit Form (GET /inventory/storage-sites/:id/edit).
- */
-export async function editStorageSiteFormHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
-  const id = c.req.param('id')
-
-  const [site] = await db
-    .select()
-    .from(schema.storageSites)
-    .where(
-      and(
-        eq(schema.storageSites.id, id),
-        eq(schema.storageSites.userId, flyer.id),
-        isNull(schema.storageSites.deletedAt),
-      ),
-    )
-    .limit(1)
-
-  if (!site) {
-    return c.text('Storage site not found', 404)
-  }
-
-  const content = storageSiteFormView({
-    site,
-    isNew: false,
-    user: flyer,
-  })
-  const fullHtml = pageLayout({
-    title: `Edit Storage Site — ${site.name}`,
-    activeTab: 'inventory',
-    content,
-    user: flyer,
-  })
-
-  return c.html(fullHtml, 200, {
-    'Content-Type': 'text/html; charset=utf-8',
-  })
-}
-
-/**
- * Update Storage Site (POST /inventory/storage-sites/:id/edit and POST /inventory/storage-sites/:id).
- */
-export async function updateStorageSiteHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
-  const id = c.req.param('id')
-
-  const [existing] = await db
-    .select()
-    .from(schema.storageSites)
-    .where(
-      and(
-        eq(schema.storageSites.id, id),
-        eq(schema.storageSites.userId, flyer.id),
-        isNull(schema.storageSites.deletedAt),
-      ),
-    )
-    .limit(1)
-
-  if (!existing) {
-    return c.text('Storage site not found', 404)
-  }
-
-  const input = await parseStorageSiteInput(c)
-
-  if (!input.name) {
-    const errorMsg = 'Storage site name is required'
-    if (input.isJson) return c.json({ error: errorMsg }, 400)
-    const content = storageSiteFormView({
-      site: { ...existing, ...input, id },
-      error: errorMsg,
-      isNew: false,
-      user: flyer,
-    })
-    return c.html(
-      pageLayout({ title: `Edit Storage Site — ${existing.name}`, activeTab: 'inventory', content, user: flyer }),
-      400,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
-  // SafeWork SA Compliance Rule: capacityKg > 3.0 strictly requires regulatory permit
-  if (input.capacityKg > 3.0 && (!input.permitNumber || input.permitNumber.trim().length === 0)) {
-    const errorMsg = 'SafeWork SA regulations require a propellant storage license/permit for storage capacity exceeding 3.0 kg'
-    if (input.isJson) return c.json({ error: errorMsg }, 400)
-    const content = storageSiteFormView({
-      site: { ...existing, ...input, id },
-      error: errorMsg,
-      isNew: false,
-      user: flyer,
-    })
-    return c.html(
-      pageLayout({ title: `Edit Storage Site — ${existing.name}`, activeTab: 'inventory', content, user: flyer }),
-      400,
-      { 'Content-Type': 'text/html; charset=utf-8' },
-    )
-  }
-
-  const [updated] = await db
-    .update(schema.storageSites)
-    .set({
-      name: input.name,
-      location: input.location,
-      capacityKg: input.capacityKg,
-      permitNumber: input.permitNumber,
-      notes: input.notes,
-      updatedAt: Date.now(),
-    })
-    .where(and(eq(schema.storageSites.id, id), eq(schema.storageSites.userId, flyer.id)))
-    .returning()
-
-  if (input.isJson) {
-    return c.json(updated, 200)
-  }
-
-  return c.redirect('/inventory/storage-sites', 303)
-}
-
-/**
- * Delete Storage Site (POST /inventory/storage-sites/:id/delete and DELETE /inventory/storage-sites/:id).
- */
-export async function deleteStorageSiteHandler(c: any) {
-  const db = drizzle(c.env.DB, { schema })
-  const flyer = (c.get as any)('user') || (await getActiveFlyer(db))
-  if (!flyer) return c.redirect('/login')
-  const id = c.req.param('id')
-
-  const [existing] = await db
-    .select()
-    .from(schema.storageSites)
-    .where(
-      and(
-        eq(schema.storageSites.id, id),
-        eq(schema.storageSites.userId, flyer.id),
-        isNull(schema.storageSites.deletedAt),
-      ),
-    )
-    .limit(1)
-
-  if (!existing) {
-    return c.text('Storage site not found', 404)
-  }
-
-  // Soft delete
-  await db
-    .update(schema.storageSites)
-    .set({
-      deletedAt: Date.now(),
-      updatedAt: Date.now(),
-    })
-    .where(and(eq(schema.storageSites.id, id), eq(schema.storageSites.userId, flyer.id)))
-
-  if (c.req.header('hx-request')) {
-    c.header('HX-Redirect', '/inventory/storage-sites')
-    return c.text('OK')
-  }
-
-  if (c.req.header('accept')?.includes('application/json')) {
-    return c.json({ success: true, id }, 200)
-  }
-
-  return c.redirect('/inventory/storage-sites', 303)
-}
-
-// Storage Sites CRUD Routes
-inventoryRouter.get('/storage-sites', listStorageSitesHandler)
-inventoryRouter.get('/inventory/storage-sites', listStorageSitesHandler)
-inventoryRouter.get('/storage-sites/new', newStorageSiteFormHandler)
-inventoryRouter.get('/inventory/storage-sites/new', newStorageSiteFormHandler)
+// Legacy Storage Sites Mutation Handlers
+// Executes database mutations and returns HTTP 303 Redirect to /sites/storage-sites/*
 inventoryRouter.post('/storage-sites', createStorageSiteHandler)
 inventoryRouter.post('/inventory/storage-sites', createStorageSiteHandler)
-inventoryRouter.get('/storage-sites/:id', viewStorageSiteHandler)
-inventoryRouter.get('/inventory/storage-sites/:id', viewStorageSiteHandler)
-inventoryRouter.get('/storage-sites/:id/edit', editStorageSiteFormHandler)
-inventoryRouter.get('/inventory/storage-sites/:id/edit', editStorageSiteFormHandler)
+
 inventoryRouter.post('/storage-sites/:id/edit', updateStorageSiteHandler)
 inventoryRouter.post('/inventory/storage-sites/:id/edit', updateStorageSiteHandler)
+
 inventoryRouter.post('/storage-sites/:id', updateStorageSiteHandler)
 inventoryRouter.post('/inventory/storage-sites/:id', updateStorageSiteHandler)
+
 inventoryRouter.post('/storage-sites/:id/delete', deleteStorageSiteHandler)
 inventoryRouter.post('/inventory/storage-sites/:id/delete', deleteStorageSiteHandler)
+
 inventoryRouter.delete('/storage-sites/:id', deleteStorageSiteHandler)
 inventoryRouter.delete('/inventory/storage-sites/:id', deleteStorageSiteHandler)
+
+
+// Motor Deletion & Lifecycle Management (Requirement R4)
+inventoryRouter.post('/motors/:id/delete', deleteMotorHandler)
+inventoryRouter.post('/inventory/motors/:id/delete', deleteMotorHandler)
+inventoryRouter.post('/:id/delete', deleteMotorHandler)
+inventoryRouter.delete('/motors/:id', deleteMotorHandler)
+inventoryRouter.delete('/inventory/motors/:id', deleteMotorHandler)
+inventoryRouter.delete('/:id/delete', deleteMotorHandler)
+
+inventoryRouter.post('/motors/batch-delete', batchDeleteMotorsHandler)
+inventoryRouter.post('/inventory/motors/batch-delete', batchDeleteMotorsHandler)
+inventoryRouter.post('/batch-delete', batchDeleteMotorsHandler)
 
 // Motor Dismissal Routes
 inventoryRouter.post('/:id/dismiss', dismissInventoryHandler)

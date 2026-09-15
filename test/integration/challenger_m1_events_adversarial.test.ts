@@ -95,6 +95,7 @@ describe('Adversarial Challenger M1: Launch Events Usability & Editing', () => {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Update Ghost Event',
@@ -136,6 +137,7 @@ describe('Adversarial Challenger M1: Launch Events Usability & Editing', () => {
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            'x-flyer-email': 'flyer@rocketry.local',
           },
           body: JSON.stringify({
             name: 'Attempted Exploitation',
@@ -248,6 +250,7 @@ describe('Adversarial Challenger M1: Launch Events Usability & Editing', () => {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'JSON Cleared Staff',
@@ -793,6 +796,7 @@ describe('Adversarial Challenger M1: Launch Events Usability & Editing', () => {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'x-flyer-email': 'flyer@rocketry.local',
         },
         body: JSON.stringify({
           name: 'Real Event',

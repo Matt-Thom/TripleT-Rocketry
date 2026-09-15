@@ -20,6 +20,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Gate G2 — Dependency & supply chain vulnerability audit
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       # Fails if src/db/schema.ts has drifted from migrations/ — a schema change
       # merged without its migration would otherwise only break at deploy time.
