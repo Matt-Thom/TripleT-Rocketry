@@ -6,8 +6,6 @@ thrust-curve data. The shape we accept is the common CSV form
 support piecewise-linear interpolation between sample points.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

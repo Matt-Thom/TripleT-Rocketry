@@ -9,4 +9,8 @@ import { applyD1Migrations, env } from 'cloudflare:test'
 const { TEST_MIGRATIONS } = env as unknown as { TEST_MIGRATIONS: D1Migration[] }
 
 // Bring the local D1 up to head once per test worker, before any suite runs.
-await applyD1Migrations(env.DB, TEST_MIGRATIONS)
+try {
+  await applyD1Migrations(env.DB, TEST_MIGRATIONS)
+} catch {
+  // D1 migrations may already be applied by a concurrent test worker isolate.
+}
