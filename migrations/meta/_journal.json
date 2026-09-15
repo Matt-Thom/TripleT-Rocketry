@@ -29,6 +29,13 @@
       "when": 1788831287990,
       "tag": "0003_cloudy_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789435749728,
+      "tag": "0004_add_flight_card_fields",
+      "breakpoints": true
     }
   ]
 }

@@ -53,28 +53,14 @@ CREATE TABLE `__new_flights` (
 	FOREIGN KEY (`rso_user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`lco_user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "ck_flights_outcome" CHECK("outcome" IS NULL OR "outcome" IN ('successful', 'cato', 'separation', 'recovery_failure', 'tree', 'powerline', 'lost', 'other', 'GOOD', 'CATO', 'Shred', 'Unstable', 'Zipper', 'Separation', 'No chute', 'Tangled', 'Lawn Dart', 'Retention fail', 'No ignition'))
-);--> statement-breakpoint
-INSERT INTO `__new_flights` (
-	`id`, `flyer_id`, `rocket_configuration_id`, `motor_id`, `motor_inventory_id`,
-	`launch_site_id`, `launch_event_id`, `flight_number`, `flown_at`, `log_type`,
-	`altitude_agl_m`, `altitude_msl_m`, `max_velocity_mps`, `max_accel_g`,
-	`wind_mps`, `wind_dir_deg`, `temperature_c`, `visibility_m`, `ceiling_m`,
-	`outcome`, `notes`, `media_urls`, `soft_gate_warnings`, `proceeded_despite_warnings`,
-	`rso_user_id`, `lco_user_id`, `rso_name`, `lco_name`,
-	`created_at`, `updated_at`, `created_by`, `deleted_at`
-) SELECT 
-	`id`, `flyer_id`, `rocket_configuration_id`, `motor_id`, `motor_inventory_id`,
-	`launch_site_id`, `launch_event_id`, `flight_number`, `flown_at`, `log_type`,
-	`altitude_agl_m`, `altitude_msl_m`, `max_velocity_mps`, `max_accel_g`,
-	`wind_mps`, `wind_dir_deg`, `temperature_c`, `visibility_m`, `ceiling_m`,
-	`outcome`, `notes`, `media_urls`, `soft_gate_warnings`, `proceeded_despite_warnings`,
-	`rso_user_id`, `lco_user_id`, `rso_name`, `lco_name`,
-	`created_at`, `updated_at`, `created_by`, `deleted_at`
-FROM `flights`;--> statement-breakpoint
+);
+--> statement-breakpoint
+INSERT INTO `__new_flights`("id", "flyer_id", "rocket_configuration_id", "motor_id", "motor_inventory_id", "launch_site_id", "launch_event_id", "flight_number", "flown_at", "log_type", "altitude_agl_m", "altitude_msl_m", "max_velocity_mps", "max_accel_g", "wind_mps", "wind_dir_deg", "temperature_c", "visibility_m", "ceiling_m", "outcome", "notes", "media_urls", "soft_gate_warnings", "proceeded_despite_warnings", "rso_user_id", "lco_user_id", "rso_name", "lco_name", "is_first_flight", "cert_attempt", "build_type", "stability_check_method", "stability_margin", "motor_type", "total_weight_g", "recovery_system", "recovery_size", "deployment_method", "main_deploy_altitude", "pad_number", "created_at", "updated_at", "created_by", "deleted_at") SELECT "id", "flyer_id", "rocket_configuration_id", "motor_id", "motor_inventory_id", "launch_site_id", "launch_event_id", "flight_number", "flown_at", "log_type", "altitude_agl_m", "altitude_msl_m", "max_velocity_mps", "max_accel_g", "wind_mps", "wind_dir_deg", "temperature_c", "visibility_m", "ceiling_m", "outcome", "notes", "media_urls", "soft_gate_warnings", "proceeded_despite_warnings", "rso_user_id", "lco_user_id", "rso_name", "lco_name", "is_first_flight", "cert_attempt", "build_type", "stability_check_method", "stability_margin", "motor_type", "total_weight_g", "recovery_system", "recovery_size", "deployment_method", "main_deploy_altitude", "pad_number", "created_at", "updated_at", "created_by", "deleted_at" FROM `flights`;--> statement-breakpoint
 DROP TABLE `flights`;--> statement-breakpoint
 ALTER TABLE `__new_flights` RENAME TO `flights`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE INDEX `ix_flights_flyer_id` ON `flights` (`flyer_id`);--> statement-breakpoint
 CREATE INDEX `ix_flights_flown_at` ON `flights` (`flown_at`);--> statement-breakpoint
 ALTER TABLE `launch_events` ADD `rso_name` text;--> statement-breakpoint
-ALTER TABLE `launch_events` ADD `lco_name` text;
+ALTER TABLE `launch_events` ADD `lco_name` text;--> statement-breakpoint
+ALTER TABLE `rocket_configurations` ADD `notes` text;
