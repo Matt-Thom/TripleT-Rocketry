@@ -9,7 +9,7 @@
 
 import { Hono } from 'hono'
 import { html } from 'hono/html'
-import { log, type TraceContext } from './logging'
+import { log } from './logging'
 import type { ActiveFlyer } from './db/context'
 import { authMiddleware } from './middleware/auth'
 import { authRouter } from './routes/auth'
@@ -34,7 +34,7 @@ type Bindings = {
 }
 
 type Variables = {
-  trace: TraceContext
+  trace: Parameters<typeof log>[2]
   user?: ActiveFlyer
   activeFlyer?: ActiveFlyer
 }
@@ -45,7 +45,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
  * Bind X-Trace-Id and project_id for every request.
  */
 app.use('*', async (c, next) => {
-  const trace: TraceContext = {
+  const trace = {
     traceId: c.req.header('x-trace-id') || crypto.randomUUID(),
     projectId: c.env.PROJECT_ID,
   }
